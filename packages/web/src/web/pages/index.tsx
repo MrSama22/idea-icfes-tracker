@@ -9,7 +9,156 @@ import { MATERIAS, defaultPreguntas, fmtClock, elapsedMs, type MateriaId } from 
 import { estadisticas } from "../lib/analytics";
 import { download, erroresCSV } from "../lib/export";
 import { useInstall } from "../lib/pwa";
-import { Smartphone, ShieldCheck } from "lucide-react";
+import { Smartphone, ShieldCheck, RefreshCw, Cloud, CloudOff, Copy, Check, Laptop } from "lucide-react";
+import { useSync, sync, sincronizar, formatear, codigoValido } from "../lib/sync";
+
+function hace(t: number | null) {
+  if (!t) return "";
+  const s = Math.round((Date.now() - t) / 1000);
+  if (s < 60) return "hace un momento";
+  const m = Math.round(s / 60);
+  if (m < 60) return `hace ${m} min`;
+  return new Date(t).toLocaleString("es-CO", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+}
+
+function Sincronizar() {
+  const st = useSync();
+  const [codigo, setCodigo] = useState("");
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copiado, setCopiado] = useState(false);
+
+  const correr = async (fn: () => Promise<void>) => {
+    setError(null);
+    setCargando(true);
+    try {
+      await fn();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Algo salió mal.");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  if (!st.codigo) {
+    return (
+      <div className="mt-3 rounded-lg border-2 border-foreground bg-card p-4">
+        <div className="flex items-start gap-3">
+          <Laptop className="mt-0.5 size-5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">Ver tus datos en el celular y en el PC</p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Activa la sincronización en un dispositivo y te damos un código. Escribe ese mismo código en el otro y
+              los dos tendrán siempre los mismos datos. No necesitas cuenta ni contraseña.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-md border border-border bg-background p-3">
+            <p className="font-mono text-[11px] uppercase tracking-[0.15em] text-accent">Paso 1 · Aquí</p>
+            <p className="mt-1 text-sm">¿Es el primer dispositivo? Crea tu código.</p>
+            <button
+              disabled={cargando}
+              onClick={() => correr(() => sync.activar())}
+              className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-accent px-4 font-semibold text-accent-foreground transition hover:brightness-110 disabled:opacity-50"
+            >
+              <Cloud className="size-4" /> Activar sincronización
+            </button>
+          </div>
+          <div className="rounded-md border border-border bg-background p-3">
+            <p className="font-mono text-[11px] uppercase tracking-[0.15em] text-accent">Paso 2 · En el otro</p>
+            <p className="mt-1 text-sm">¿Ya tienes un código? Escríbelo aquí.</p>
+            <div className="mt-3 flex gap-2">
+              <input
+                value={codigo}
+                onChange={(e) => setCodigo(formatear(e.target.value).slice(0, 14))}
+                onKeyDown={(e) => e.key === "Enter" && codigoValido(codigo) && correr(() => sync.conectar(codigo))}
+                placeholder="XXXX-XXXX-XXXX"
+                autoCapitalize="characters"
+                autoComplete="off"
+                spellCheck={false}
+                aria-label="Código de sincronización"
+                className="h-11 min-w-0 flex-1 rounded-md border border-border bg-card px-3 font-mono text-base uppercase tracking-wider outline-none focus:border-foreground"
+              />
+              <button
+                disabled={cargando || !codigoValido(codigo)}
+                onClick={() => correr(() => sync.conectar(codigo))}
+                className="h-11 rounded-md bg-foreground px-4 text-sm font-semibold text-background disabled:opacity-40"
+              >
+                Conectar
+              </button>
+            </div>
+          </div>
+        </div>
+        {error && <p className="mt-3 text-sm font-medium text-accent">{error}</p>}
+      </div>
+    );
+  }
+
+  const icono =
+    st.estado === "sin-conexion" || st.estado === "error" ? (
+      <CloudOff className="size-5 shrink-0 text-accent" />
+    ) : (
+      <Cloud className="size-5 shrink-0 text-[#2E7D4F]" />
+    );
+  const texto =
+    st.estado === "sincronizando"
+      ? "Sincronizando…"
+      : st.estado === "ok"
+        ? `Sincronizado ${hace(st.ultima)}`
+        : (st.mensaje ?? "Pendiente de sincronizar");
+
+  return (
+    <div className="mt-3 rounded-lg border-2 border-foreground bg-card p-4">
+      <div className="flex items-start gap-3">
+        {icono}
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">Sincronización activada</p>
+          <p className="mt-0.5 text-sm text-muted-foreground" data-testid="sync-estado">
+            {texto}. Para ver tus datos en otro dispositivo, abre la app allí y escribe este código:
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <code
+          data-testid="sync-codigo"
+          className="select-all rounded-md border border-dashed border-foreground bg-background px-3 py-2 font-mono text-xl font-bold tracking-[0.12em]"
+        >
+          {formatear(st.codigo)}
+        </code>
+        <GhostButton
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(formatear(st.codigo!));
+              setCopiado(true);
+              setTimeout(() => setCopiado(false), 1500);
+            } catch {
+              /* sin portapapeles */
+            }
+          }}
+        >
+          {copiado ? <Check className="size-4" /> : <Copy className="size-4" />} {copiado ? "Copiado" : "Copiar"}
+        </GhostButton>
+        <GhostButton disabled={st.estado === "sincronizando"} onClick={() => void sincronizar()}>
+          <RefreshCw className={`size-4 ${st.estado === "sincronizando" ? "animate-spin" : ""}`} /> Sincronizar ahora
+        </GhostButton>
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Guarda este código como una contraseña: quien lo tenga puede ver tus datos. Los cambios se envían solos
+        cuando hay internet; sin conexión todo sigue guardado aquí.{" "}
+        <button
+          className="underline underline-offset-2 hover:text-accent"
+          onClick={() =>
+            confirm("¿Dejar de sincronizar este dispositivo? Tus datos se quedan aquí, pero ya no se actualizarán con el otro.") &&
+            sync.desconectar()
+          }
+        >
+          Desconectar este dispositivo
+        </button>
+      </p>
+    </div>
+  );
+}
 
 function Guardado() {
   const db = useDB();
@@ -340,8 +489,9 @@ export default function Index() {
       <section>
         <SectionTitle n="03">Tus datos</SectionTitle>
         <Guardado />
+        <Sincronizar />
         <p className="mb-3 mt-4 max-w-2xl text-sm text-muted-foreground">
-          Copia de seguridad opcional: descarga un respaldo de vez en cuando, o úsalo para pasar tus datos a otro dispositivo.
+          Copia de seguridad opcional: descarga un respaldo de vez en cuando.
         </p>
         <Respaldo />
       </section>

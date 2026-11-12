@@ -1,4 +1,4 @@
-# Netlify: build estático del frontend (SPA). Los datos viven en el navegador (localStorage).
+# Netlify: frontend estático (SPA) + función /api/sync para sincronizar entre dispositivos.
 [build]
   command = "bun install && bun run build:web"
   publish = "packages/web/dist"

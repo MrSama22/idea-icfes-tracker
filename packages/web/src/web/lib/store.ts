@@ -9,15 +9,12 @@ import {
   type TipoId,
 } from "./domain";
 
+import { mergeDB, type DB } from "./merge";
+export type { DB };
+
 const KEY = "idea-icfes:v1";
 
-export interface DB {
-  version: 1;
-  simulacros: Simulacro[];
-  errores: ErrorRegistrado[];
-}
-
-const empty = (): DB => ({ version: 1, simulacros: [], errores: [] });
+const empty = (): DB => ({ version: 1, simulacros: [], errores: [], borrados: {} });
 
 function load(): DB {
   if (typeof localStorage === "undefined") return empty();
@@ -34,8 +31,9 @@ function load(): DB {
 
 let state: DB = load();
 const listeners = new Set<() => void>();
+const localListeners = new Set<() => void>();
 
-function commit(next: DB) {
+function save(next: DB) {
   state = next;
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
@@ -44,6 +42,20 @@ function commit(next: DB) {
   }
   listeners.forEach((l) => l());
 }
+
+/** Cambio hecho por el usuario en este dispositivo (avisa a la sincronización). */
+function commit(next: DB) {
+  save(next);
+  localListeners.forEach((l) => l());
+}
+
+const now = () => Date.now();
+const tomb = (ids: string[]) => {
+  const b = { ...(state.borrados ?? {}) };
+  const t = now();
+  for (const id of ids) b[id] = t;
+  return b;
+};
 
 if (typeof window !== "undefined") {
   // Sincroniza entre pestañas
@@ -66,6 +78,15 @@ export const store = {
     return () => listeners.delete(l);
   },
   getState: () => state,
+  /** Se llama solo con cambios hechos aquí (no con los que llegan de la nube). */
+  onLocalChange(l: () => void) {
+    localListeners.add(l);
+    return () => localListeners.delete(l);
+  },
+  /** Mezcla datos que llegan de otro dispositivo. */
+  aplicarRemoto(remoto: Partial<DB>) {
+    save(mergeDB(state, remoto));
+  },
 
   // --- Simulacros ---
   crearSimulacro(input: {
@@ -83,6 +104,7 @@ export const store = {
       iniciadoEn: null,
       finalizado: false,
       creadoEn: Date.now(),
+      updatedAt: Date.now(),
     };
     commit({ ...state, simulacros: [s, ...state.simulacros] });
     return s;
@@ -90,12 +112,16 @@ export const store = {
   actualizarSimulacro(id: string, patch: Partial<Simulacro>) {
     commit({
       ...state,
-      simulacros: state.simulacros.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+      simulacros: state.simulacros.map((s) =>
+        s.id === id ? { ...s, ...patch, updatedAt: now() } : s,
+      ),
     });
   },
   eliminarSimulacro(id: string) {
+    const hijos = state.errores.filter((e) => e.simulacroId === id).map((e) => e.id);
     commit({
       ...state,
+      borrados: tomb([id, ...hijos]),
       simulacros: state.simulacros.filter((s) => s.id !== id),
       errores: state.errores.filter((e) => e.simulacroId !== id),
     });
@@ -143,18 +169,26 @@ export const store = {
       nota: (input.nota ?? "").trim(),
       timestamp: Date.now(),
       minuto: s && (s.iniciadoEn || s.acumuladoMs > 0) ? Math.floor(ms / 60000) : null,
+      updatedAt: Date.now(),
     };
     commit({ ...state, errores: [e, ...state.errores] });
     return e;
   },
   actualizarError(id: string, patch: Partial<ErrorRegistrado>) {
-    commit({ ...state, errores: state.errores.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
+    commit({ ...state, errores: state.errores.map((e) => (e.id === id ? { ...e, ...patch, updatedAt: now() } : e)),
+    });
   },
   eliminarError(id: string) {
-    commit({ ...state, errores: state.errores.filter((e) => e.id !== id) });
+    commit({ ...state, borrados: tomb([id]), errores: state.errores.filter((e) => e.id !== id) });
   },
   restaurarError(e: ErrorRegistrado) {
-    commit({ ...state, errores: [e, ...state.errores].sort((a, b) => b.timestamp - a.timestamp) });
+    const borrados = { ...(state.borrados ?? {}) };
+    delete borrados[e.id];
+    commit({
+      ...state,
+      borrados,
+      errores: [{ ...e, updatedAt: now() }, ...state.errores].sort((a, b) => b.timestamp - a.timestamp),
+    });
   },
 
   // --- Respaldo ---
@@ -167,17 +201,20 @@ export const store = {
       throw new Error("Archivo inválido");
     }
     if (modo === "reemplazar") {
-      commit({ version: 1, simulacros: data.simulacros, errores: data.errores });
+      // Lo que no viene en el archivo se marca como borrado; lo importado cuenta como recién editado.
+      const t = now();
+      const ids = new Set([...data.simulacros, ...data.errores].map((x) => x.id));
+      const fuera = [...state.simulacros, ...state.errores].map((x) => x.id).filter((id) => !ids.has(id));
+      const borrados = tomb(fuera);
+      for (const id of ids) delete borrados[id];
+      commit({
+        version: 1,
+        simulacros: data.simulacros.map((s) => ({ ...s, updatedAt: t })),
+        errores: data.errores.map((e) => ({ ...e, updatedAt: t })),
+        borrados,
+      });
       return;
     }
-    const sIds = new Set(state.simulacros.map((s) => s.id));
-    const eIds = new Set(state.errores.map((e) => e.id));
-    commit({
-      version: 1,
-      simulacros: [...state.simulacros, ...data.simulacros.filter((s) => !sIds.has(s.id))].sort(
-        (a, b) => b.creadoEn - a.creadoEn,
-      ),
-      errores: [...state.errores, ...data.errores.filter((e) => !eIds.has(e.id))],
-    });
+    commit(mergeDB(state, data));
   },
 };

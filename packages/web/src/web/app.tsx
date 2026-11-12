@@ -1,5 +1,6 @@
 import { Route, Switch } from "wouter";
 import "./lib/pwa";
+import "./lib/sync";
 import Index from "./pages/index";
 import SimulacroPage from "./pages/simulacro";
 import ReportePage from "./pages/reporte";

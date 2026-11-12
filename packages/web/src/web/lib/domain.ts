@@ -73,6 +73,7 @@ export interface Simulacro {
   iniciadoEn: number | null; // epoch ms si está corriendo
   finalizado: boolean;
   creadoEn: number;
+  updatedAt?: number; // última edición (para sincronizar)
 }
 
 export interface ErrorRegistrado {
@@ -84,6 +85,7 @@ export interface ErrorRegistrado {
   nota: string;
   timestamp: number; // epoch ms
   minuto: number | null; // minuto del simulacro en que se registró
+  updatedAt?: number;
 }
 
 export const materiaById = (id: MateriaId) => MATERIAS.find((m) => m.id === id)!;
