@@ -1,0 +1,13 @@
+# Netlify: build estático del frontend (SPA). Los datos viven en el navegador (localStorage).
+[build]
+  command = "bun install && bun run build:web"
+  publish = "packages/web/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+  BUN_VERSION = "1.3.14"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

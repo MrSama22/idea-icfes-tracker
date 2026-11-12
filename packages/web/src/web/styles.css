@@ -1,0 +1,147 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Poppins", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --radius: 0.375rem;
+  --background: #f3efe4;
+  --foreground: #16150f;
+  --card: #fbf9f3;
+  --card-foreground: #16150f;
+  --popover: #fbf9f3;
+  --popover-foreground: #16150f;
+  --primary: #16150f;
+  --primary-foreground: #fbf9f3;
+  --secondary: #e9e3d3;
+  --secondary-foreground: #16150f;
+  --muted: #e9e3d3;
+  --muted-foreground: #6b675a;
+  --accent: #e2401c;
+  --accent-foreground: #fbf9f3;
+  --destructive: #c2290e;
+  --border: #d9d2bf;
+  --input: #d9d2bf;
+  --ring: #e2401c;
+  --chart-1: #e2401c;
+  --chart-2: #d99a06;
+  --chart-3: #2f5da8;
+  --chart-4: #2e7d4f;
+  --chart-5: #8c3b6e;
+  --sidebar: #fbf9f3;
+  --sidebar-foreground: #16150f;
+  --sidebar-primary: #16150f;
+  --sidebar-primary-foreground: #fbf9f3;
+  --sidebar-accent: #e9e3d3;
+  --sidebar-accent-foreground: #16150f;
+  --sidebar-border: #d9d2bf;
+  --sidebar-ring: #e2401c;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--background);
+    background-image:
+      linear-gradient(to right, rgb(22 21 15 / 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(22 21 15 / 0.035) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes flash {
+  0% {
+    background-color: rgb(226 64 28 / 0.18);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.flash {
+  animation: flash 1.2s ease-out;
+}
+
+@media print {
+  body {
+    background: white !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-page {
+    box-shadow: none !important;
+    border: none !important;
+  }
+  @page {
+    margin: 14mm;
+  }
+}
