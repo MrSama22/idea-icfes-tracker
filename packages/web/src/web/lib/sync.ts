@@ -55,6 +55,7 @@ function generar() {
 
 let enCurso: Promise<void> | null = null;
 let otraVez = false;
+let reintento: ReturnType<typeof setTimeout> | undefined;
 
 /** Envía lo de este dispositivo, recibe la mezcla de la nube y la aplica. */
 export function sincronizar(): Promise<void> {
@@ -85,6 +86,8 @@ export function sincronizar(): Promise<void> {
       set({ estado: "ok", ultima: Date.now(), mensaje: undefined });
     } catch (e) {
       const offline = e instanceof TypeError;
+      clearTimeout(reintento);
+      reintento = setTimeout(() => void sincronizar(), offline ? 5000 : 15000);
       set({
         estado: offline ? "sin-conexion" : "error",
         mensaje: offline ? "Sin internet: se sincroniza al volver la conexión." : "No se pudo sincronizar.",
