@@ -339,9 +339,9 @@ export default function Index() {
 
       <section>
         <SectionTitle n="03">Tus datos</SectionTitle>
-        <p className="mb-3 max-w-2xl text-sm text-muted-foreground">
-          Todo se guarda en este dispositivo. Usa el respaldo JSON para pasar tus datos entre el
-          celular y el PC o para no perderlos.
+        <Guardado />
+        <p className="mb-3 mt-4 max-w-2xl text-sm text-muted-foreground">
+          Copia de seguridad opcional: descarga un respaldo de vez en cuando, o úsalo para pasar tus datos a otro dispositivo.
         </p>
         <Respaldo />
       </section>
