@@ -95,7 +95,7 @@ export default function ReportePage() {
           <Diagnostico items={diag} />
         </section>
 
-        <section className="mt-8 grid gap-8 sm:grid-cols-2">
+        <section className="mt-8 grid grid-cols-1 gap-8 sm:grid-cols-2">
           <div className="break-inside-avoid">
             <h2 className="mb-3 font-display text-lg font-bold">Errores por materia</h2>
             <MateriaBars st={st} />

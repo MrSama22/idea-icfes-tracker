@@ -17,7 +17,7 @@ export function Shell({ children, right }: { children: React.ReactNode; right?: 
           <div className="flex items-center gap-2">{right}</div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 pb-24 pt-5">{children}</main>
+      <main className="mx-auto max-w-6xl overflow-x-clip px-4 pb-24 pt-5">{children}</main>
     </div>
   );
 }

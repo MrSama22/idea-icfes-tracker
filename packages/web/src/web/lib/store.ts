@@ -5,6 +5,7 @@ import {
   elapsedMs,
   type ErrorRegistrado,
   type MateriaId,
+  type Practica,
   type Simulacro,
   type TipoId,
 } from "./domain";
@@ -14,7 +15,7 @@ export type { DB };
 
 const KEY = "idea-icfes:v1";
 
-const empty = (): DB => ({ version: 1, simulacros: [], errores: [], borrados: {} });
+const empty = (): DB => ({ version: 1, simulacros: [], errores: [], practicas: [], borrados: {} });
 
 function load(): DB {
   if (typeof localStorage === "undefined") return empty();
@@ -191,6 +192,75 @@ export const store = {
     });
   },
 
+  // --- Simulacros generados (banco oficial) ---
+  crearPractica(input: Omit<Practica, "id" | "respuestas" | "marcadas" | "actual" | "acumuladoMs" | "iniciadoEn" | "finalizado" | "creadoEn" | "updatedAt">) {
+    const p: Practica = {
+      ...input,
+      id: uid(),
+      respuestas: {},
+      marcadas: [],
+      actual: 0,
+      acumuladoMs: 0,
+      iniciadoEn: null,
+      finalizado: false,
+      creadoEn: now(),
+      updatedAt: now(),
+    };
+    commit({ ...state, practicas: [p, ...(state.practicas ?? [])] });
+    return p;
+  },
+  actualizarPractica(id: string, patch: Partial<Practica> | ((p: Practica) => Partial<Practica>)) {
+    commit({
+      ...state,
+      practicas: (state.practicas ?? []).map((p) =>
+        p.id === id ? { ...p, ...(typeof patch === "function" ? patch(p) : patch), updatedAt: now() } : p,
+      ),
+    });
+  },
+  eliminarPractica(id: string) {
+    commit({ ...state, borrados: tomb([id]), practicas: (state.practicas ?? []).filter((p) => p.id !== id) });
+  },
+  /** Crea en el registro de errores un simulacro con los fallos (alimenta los análisis existentes). */
+  registrarFallos(practicaId: string, input: {
+    nombre: string;
+    duracionMin: number;
+    acumuladoMs: number;
+    preguntas: Record<MateriaId, number>;
+    errores: { materia: MateriaId; numeroPregunta: number; tipo: TipoId; nota: string }[];
+  }) {
+    const t = now();
+    const s: Simulacro = {
+      id: uid(),
+      nombre: input.nombre,
+      fecha: new Date().toISOString(),
+      duracionMin: input.duracionMin,
+      preguntas: input.preguntas,
+      acumuladoMs: input.acumuladoMs,
+      iniciadoEn: null,
+      finalizado: true,
+      creadoEn: t,
+      updatedAt: t,
+    };
+    const errores: ErrorRegistrado[] = input.errores.map((e, i) => ({
+      id: uid(),
+      simulacroId: s.id,
+      materia: e.materia,
+      numeroPregunta: e.numeroPregunta,
+      tipo: e.tipo,
+      nota: e.nota,
+      timestamp: t - i,
+      minuto: null,
+      updatedAt: t,
+    }));
+    commit({
+      ...state,
+      simulacros: [s, ...state.simulacros],
+      errores: [...errores, ...state.errores],
+      practicas: (state.practicas ?? []).map((p) => (p.id === practicaId ? { ...p, registroId: s.id, updatedAt: t } : p)),
+    });
+    return s;
+  },
+
   // --- Respaldo ---
   exportar(): string {
     return JSON.stringify(state, null, 2);
@@ -203,14 +273,17 @@ export const store = {
     if (modo === "reemplazar") {
       // Lo que no viene en el archivo se marca como borrado; lo importado cuenta como recién editado.
       const t = now();
-      const ids = new Set([...data.simulacros, ...data.errores].map((x) => x.id));
-      const fuera = [...state.simulacros, ...state.errores].map((x) => x.id).filter((id) => !ids.has(id));
+      const ids = new Set([...data.simulacros, ...data.errores, ...(data.practicas ?? [])].map((x) => x.id));
+      const fuera = [...state.simulacros, ...state.errores, ...(state.practicas ?? [])]
+        .map((x) => x.id)
+        .filter((id) => !ids.has(id));
       const borrados = tomb(fuera);
       for (const id of ids) delete borrados[id];
       commit({
         version: 1,
         simulacros: data.simulacros.map((s) => ({ ...s, updatedAt: t })),
         errores: data.errores.map((e) => ({ ...e, updatedAt: t })),
+        practicas: (data.practicas ?? []).map((p) => ({ ...p, updatedAt: t })),
         borrados,
       });
       return;

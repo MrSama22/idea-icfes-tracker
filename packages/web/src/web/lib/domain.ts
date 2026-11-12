@@ -112,3 +112,35 @@ export function fmtClock(ms: number) {
 }
 
 export const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
+
+// --- Simulacros generados desde el banco de preguntas oficiales ---
+export interface PracticaItem {
+  /** id de la unidad (pregunta suelta o grupo con texto común) */
+  u: string;
+  /** preguntas de la unidad incluidas (si es parte de un grupo, el contexto se muestra completo) */
+  qs: number[];
+}
+
+export interface Practica {
+  id: string;
+  tipo: "simulacro" | "tema";
+  modo: "examen" | "practica"; // examen: resultados al final · practica: explicación al instante
+  nombre: string;
+  temaId?: string;
+  materias: MateriaId[];
+  duracionMin: number; // 0 = sin límite
+  items: PracticaItem[];
+  /** "unidad:n" → letra elegida */
+  respuestas: Record<string, string>;
+  marcadas: string[];
+  actual: number; // índice de la pregunta abierta
+  acumuladoMs: number;
+  iniciadoEn: number | null;
+  finalizado: boolean;
+  finalizadoEn?: number;
+  registroId?: string; // simulacro del registro de errores creado al terminar
+  creadoEn: number;
+  updatedAt?: number;
+}
+
+export const qkey = (u: string, n: number) => `${u}:${n}`;

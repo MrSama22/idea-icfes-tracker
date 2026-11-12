@@ -1,5 +1,5 @@
 // Service worker: permite abrir la app sin internet (los datos ya viven en el celular).
-const CACHE = "idea-v2";
+const CACHE = "idea-v3";
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/manifest.webmanifest"])));
   self.skipWaiting();

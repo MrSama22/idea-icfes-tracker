@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { ArrowRight, Download, FileUp, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Download, FileUp, GraduationCap, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Shell, SectionTitle, GhostButton } from "../components/shell";
 import { Evolucion, TendenciaMaterias } from "../components/charts";
 import { useDB } from "../hooks/use-store";
@@ -53,7 +53,7 @@ function Sincronizar() {
             </p>
           </div>
         </div>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="rounded-md border border-border bg-background p-3">
             <p className="font-mono text-[11px] uppercase tracking-[0.15em] text-accent">Paso 1 · Aquí</p>
             <p className="mt-1 text-sm">¿Es el primer dispositivo? Crea tu código.</p>
@@ -342,12 +342,73 @@ function Respaldo() {
   );
 }
 
+function PracticarReal() {
+  const db = useDB();
+  const recientes = (db.practicas ?? []).slice(0, 4);
+  return (
+    <section className="mb-10">
+      <SectionTitle n="★">Practica con preguntas reales del ICFES</SectionTitle>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Link
+          to="/generar"
+          data-testid="ir-generar"
+          className="group relative overflow-hidden rounded-xl border-2 border-foreground bg-foreground p-5 text-background shadow-[5px_5px_0_#E2401C] transition hover:-translate-y-0.5"
+        >
+          <Sparkles className="size-6 text-accent" />
+          <p className="mt-3 font-display text-2xl font-extrabold leading-tight">Generar simulacro</p>
+          <p className="mt-1 text-sm opacity-75">Elige tiempo y materias. Preguntas al azar de los cuadernillos oficiales, con explicación de cada respuesta.</p>
+          <ArrowRight className="absolute right-5 top-5 size-5 transition group-hover:translate-x-1" />
+        </Link>
+        <Link
+          to="/reforzar"
+          data-testid="ir-reforzar"
+          className="group relative overflow-hidden rounded-xl border-2 border-foreground bg-card p-5 transition hover:-translate-y-0.5"
+        >
+          <img src="/banco/ilus/mat-argumentar.webp" alt="" className="pointer-events-none absolute -bottom-6 -right-8 w-48 opacity-90" />
+          <GraduationCap className="size-6 text-accent" />
+          <p className="mt-3 font-display text-2xl font-extrabold leading-tight">Reforzar temas</p>
+          <p className="relative mt-1 max-w-[16rem] text-sm text-muted-foreground">Lecciones sencillas e ilustradas de lo que más se te dificulta.</p>
+        </Link>
+      </div>
+      {recientes.length > 0 && (
+        <ul className="mt-3 divide-y divide-border border-y border-border">
+          {recientes.map((p) => {
+            const total = p.items.reduce((a, it) => a + it.qs.length, 0);
+            const resp = Object.keys(p.respuestas).length;
+            return (
+              <li key={p.id} className="group relative">
+                <Link to={p.finalizado ? `/p/${p.id}/resultado` : `/p/${p.id}`} className="flex items-center gap-3 py-3 pr-10">
+                  <span className={`size-2 shrink-0 rounded-full ${p.finalizado ? "bg-muted-foreground" : "animate-pulse bg-accent"}`} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">{p.nombre}</span>
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {p.finalizado ? "Terminado · ver resultados y explicaciones" : `En curso · ${resp}/${total} respondidas · continuar`}
+                    </span>
+                  </span>
+                  <ArrowRight className="size-4 shrink-0" />
+                </Link>
+                <button
+                  aria-label="Borrar"
+                  onClick={() => confirm("¿Borrar este simulacro generado?") && store.eliminarPractica(p.id)}
+                  className="absolute right-0 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-muted-foreground opacity-60 hover:bg-muted hover:opacity-100"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export default function Index() {
   const db = useDB();
 
   return (
     <Shell>
-      <section className="grid gap-6 pb-8 pt-4 lg:grid-cols-[1.1fr_1fr] lg:items-end">
+      <section className="grid grid-cols-1 gap-6 pb-8 pt-4 lg:grid-cols-[1.1fr_1fr] lg:items-end">
         <div className="rise">
           <h1 className="font-display text-[2.6rem] font-extrabold leading-[0.95] tracking-tight sm:text-6xl">
             Cada error es
@@ -377,6 +438,8 @@ export default function Index() {
         </div>
         <NuevoSimulacro />
       </section>
+
+      <PracticarReal />
 
       <section className="mb-10">
         <SectionTitle
@@ -471,7 +534,7 @@ export default function Index() {
 
       <section className="mb-10">
         <SectionTitle n="02">Evolución entre simulacros</SectionTitle>
-        <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.6fr_1fr]">
           <div className="rounded-lg border border-border bg-card p-4">
             <Evolucion simulacros={db.simulacros} errores={db.errores} />
           </div>
