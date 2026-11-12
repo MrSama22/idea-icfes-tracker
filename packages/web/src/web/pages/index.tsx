@@ -8,6 +8,48 @@ import { store } from "../lib/store";
 import { MATERIAS, defaultPreguntas, fmtClock, elapsedMs, type MateriaId } from "../lib/domain";
 import { estadisticas } from "../lib/analytics";
 import { download, erroresCSV } from "../lib/export";
+import { useInstall } from "../lib/pwa";
+import { Smartphone, ShieldCheck } from "lucide-react";
+
+function Guardado() {
+  const db = useDB();
+  const { instalada, puedeInstalar, ios, instalar } = useInstall();
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-start gap-3">
+        <ShieldCheck className="mt-0.5 size-5 shrink-0 text-[#2E7D4F]" />
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">Tus datos se guardan en este dispositivo</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {db.simulacros.length} simulacros y {db.errores.length} errores guardados aquí. Se conservan aunque cierres la app o
+            apagues el celular, y funciona sin internet. Solo se pierden si borras los datos del navegador.
+          </p>
+        </div>
+      </div>
+      {!instalada && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
+          <Smartphone className="size-5 shrink-0" />
+          {puedeInstalar ? (
+            <>
+              <span className="flex-1 text-sm">Instálala en tu celular como una app, con icono propio.</span>
+              <button onClick={instalar} className="rounded-md bg-foreground px-4 py-2 text-sm font-semibold text-background">
+                Instalar app
+              </button>
+            </>
+          ) : ios ? (
+            <span className="flex-1 text-sm">
+              Para instalarla en iPhone: toca <b>Compartir</b> (cuadro con flecha) → <b>Agregar a pantalla de inicio</b>.
+            </span>
+          ) : (
+            <span className="flex-1 text-sm">
+              Para instalarla: en Chrome toca el menú <b>⋮</b> → <b>Instalar app</b> o <b>Agregar a pantalla principal</b>.
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const DURACIONES = [
   { label: "Sesión 1 · 4h 30m", min: 270 },
