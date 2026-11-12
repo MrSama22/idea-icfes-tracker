@@ -65,6 +65,7 @@ export function sincronizar(): Promise<void> {
     return enCurso;
   }
   enCurso = (async () => {
+    await Promise.resolve(); // asegura que `enCurso` quede asignado antes del `finally`
     const codigo = s.codigo!;
     set({ estado: "sincronizando" });
     try {
