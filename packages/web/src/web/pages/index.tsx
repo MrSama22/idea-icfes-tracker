@@ -301,7 +301,7 @@ function PracticarReal() {
           data-testid="ir-reforzar"
           className="group relative overflow-hidden rounded-xl border-2 border-foreground bg-card p-5 transition hover:-translate-y-0.5"
         >
-          <img src="/banco/ilus/mat-argumentar.webp" alt="" className="pointer-events-none absolute -bottom-6 -right-8 w-48 opacity-90" />
+          <img src="/banco/ilus/mat-argumentar.webp" alt="" className="pointer-events-none absolute right-1.5 top-1/2 w-48 -translate-y-1/2 opacity-90" />
           <GraduationCap className="size-6 text-accent" />
           <p className="mt-3 font-display text-2xl font-extrabold leading-tight">Reforzar temas</p>
           <p className="relative mt-1 max-w-[16rem] text-sm text-muted-foreground">Lecciones sencillas e ilustradas, con videos, de lo que más se te dificulta.</p>

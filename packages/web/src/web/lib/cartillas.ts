@@ -1,10 +1,10 @@
 // Cartillas subidas por el estudiante (PDF o fotos) → preguntas nuevas para el banco.
 // 1) Se dibuja cada página en el navegador. 2) La IA transcribe las preguntas página por página.
 // 3) Se recortan las figuras. 4) La IA explica cada pregunta (y la resuelve si la cartilla no trae clave).
-// Todo queda en el dispositivo (IndexedDB) y, si hay código de sincronización, también en la nube.
+// Todo queda en el dispositivo (IndexedDB) y, si hay una cuenta, también en la nube de esa cuenta.
 import { useSyncExternalStore } from "react";
 import { idb } from "./idb";
-import { sync } from "./sync";
+import { auth } from "./auth";
 import { MATERIAS, type MateriaId } from "./domain";
 import type { Figura, Pregunta, Unidad } from "./banco";
 
@@ -14,6 +14,8 @@ interface Paso {
   estado: "pendiente" | "enviado" | "listo" | "error";
   intentos: number;
   r?: any;
+  /** motivo del fallo, para no perderlo cuando la IA no responde */
+  error?: string;
 }
 interface Cruda {
   id: string;
@@ -37,6 +39,8 @@ export interface Cartilla {
   exp: Record<string, Paso>;
   unidades: Unidad[];
   sincronizada?: boolean;
+  /** el administrador la publicó para todas las cuentas */
+  global?: boolean;
 }
 
 const MAX_PAGINAS = 120;
@@ -45,6 +49,9 @@ const RITMO = 1.35;
 
 // ---------- estado en memoria + suscripción ----------
 let lista: Cartilla[] = [];
+let globales: Cartilla[] = [];
+/** Aviso del último intento de subida (se muestra en la página de cartillas). */
+let aviso: string | null = null;
 const subs = new Set<() => void>();
 const avisar = () => {
   lista = [...lista];
@@ -82,9 +89,10 @@ export const cartillas = {
   },
   get: () => lista,
   listo: () => listoP,
-  /** Unidades listas de las cartillas activas (se suman al banco). */
+  /** Unidades listas de las cartillas activas + las globales (se suman al banco). */
   unidades(): Unidad[] {
-    return lista.filter((c) => c.fase === "listo" && c.activa).flatMap((c) => c.unidades);
+    const propias = lista.filter((c) => c.fase === "listo" && c.activa).flatMap((c) => c.unidades);
+    return [...propias, ...globales.flatMap((c) => c.unidades)];
   },
   async alternar(id: string) {
     const c = lista.find((x) => x.id === id);
@@ -102,8 +110,7 @@ export const cartillas = {
     avisar();
     await idb.del("cartillas", id);
     await idb.delPrefijo("paginas", `${id}:`);
-    const codigo = sync.get().codigo;
-    if (codigo) await fetch(`/api/cartillas/${codigo}/${id}`, { method: "DELETE" }).catch(() => {});
+    if (auth.get().cuenta) await fetch(`/api/cartillas/${id}`, { method: "DELETE" }).catch(() => {});
   },
   async reintentar(id: string) {
     const c = lista.find((x) => x.id === id);
@@ -118,6 +125,50 @@ export const cartillas = {
 
 export function useCartillas() {
   return useSyncExternalStore(cartillas.subscribe, cartillas.get, cartillas.get);
+}
+
+const limpiar = (s: string) =>
+  s
+    .replace(/\u001b\[[0-9;]*m/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+
+function avisarError(txt: string) {
+  aviso = txt;
+  avisar();
+}
+
+export function limpiarAviso() {
+  aviso = null;
+  avisar();
+}
+
+export function useAviso() {
+  return useSyncExternalStore(cartillas.subscribe, () => aviso, () => aviso);
+}
+
+/** Mensaje real cuando ninguna página produjo preguntas. */
+function mensajeFallo(fallos: string[], total: number) {
+  const todo = fallos.join(" ").toLowerCase();
+  if (todo.includes("openai_api_key") || todo.includes("ai_gateway_api_key") || todo.includes("falta openai")) {
+    return "La lectura con IA no está configurada en el servidor (falta OPENAI_API_KEY), así que no se pudieron leer las páginas.";
+  }
+  if (todo.includes("insufficient_quota") || todo.includes("exceeded your current quota") || todo.includes("no credits remaining")) {
+    return "La cuenta de IA se quedó sin saldo, así que no se pudieron leer las páginas. Añade créditos a la API o usa otra clave.";
+  }
+  if (fallos.length) {
+    return `No se pudieron leer ${fallos.length} de ${total} páginas. ${limpiar(fallos[0])}`;
+  }
+  return "No encontramos preguntas de selección múltiple en este archivo.";
+}
+
+/** Quita la cartilla de la lista y del dispositivo (subida cancelada). */
+async function descartar(id: string) {
+  lista = lista.filter((x) => x.id !== id);
+  avisar();
+  await idb.del("cartillas", id);
+  await idb.delPrefijo("paginas", `${id}:`);
 }
 
 export function progreso(c: Cartilla) {
@@ -146,7 +197,13 @@ async function aJpeg(fuente: CanvasImageSource, w: number, h: number, maxW = 140
   return cv.toDataURL("image/jpeg", calidad);
 }
 
-export async function subirArchivos(files: File[], nombre: string, materia: MateriaId | null, onPaso?: (txt: string) => void) {
+export async function subirArchivos(
+  files: File[],
+  nombre: string,
+  materia: MateriaId | null,
+  onPaso?: (txt: string) => void,
+  global = false,
+) {
   const id = uid();
   const c: Cartilla = {
     id,
@@ -159,6 +216,7 @@ export async function subirArchivos(files: File[], nombre: string, materia: Mate
     paginas: {},
     exp: {},
     unidades: [],
+    global: global || undefined,
   };
   await guardar(c);
   try {
@@ -221,6 +279,11 @@ async function trabajo(paso: Paso, jobId: string, cuerpo: () => Promise<unknown>
     }
     if (!res) throw new Pausa("Sin conexión. Seguimos cuando vuelva el internet.");
     if (res.status === 429) throw new Pausa("Se alcanzó el límite de hoy para leer cartillas. Sigue mañana.");
+    if (res.status === 402) {
+      // Sin clave de IA en la cuenta: no tiene sentido reintentar.
+      const d = await res.json().catch(() => null);
+      throw new Error(String((d as { error?: string } | null)?.error ?? "Añade tu clave de IA para leer cartillas."));
+    }
     if (!res.ok) {
       p = { ...p, intentos: p.intentos + 1, estado: p.intentos + 1 >= 3 ? "error" : "pendiente", job: undefined };
       await alGuardar(p);
@@ -240,7 +303,10 @@ async function trabajo(paso: Paso, jobId: string, cuerpo: () => Promise<unknown>
       await alGuardar(p);
       return p;
     }
-    if (r?.estado === "error") break;
+    if (r?.estado === "error") {
+      p = { ...p, error: String(r.error ?? "").slice(0, 400) };
+      break;
+    }
   }
   p = { ...p, intentos: p.intentos + 1, estado: p.intentos + 1 >= 3 ? "error" : "pendiente", job: undefined };
   await alGuardar(p);
@@ -423,14 +489,17 @@ async function ensamblar(id: string) {
   for (const u of crudas) for (const q of u.preguntas) q.clave = claves[String(q.n)] ?? q.clave;
 
   const cc = actual(id);
+  // Más de 2 preguntas repetidas ⇒ la cartilla ya está en el banco: se cancela la subida.
+  if (repetidas > 2) {
+    await descartar(id);
+    avisarError(`«${cc.nombre}» no se agregó: ${repetidas} de sus preguntas ya estaban en tu banco.`);
+    throw new Error("Cartilla repetida");
+  }
   if (!crudas.length) {
-    await guardar({
-      ...cc,
-      crudas,
-      repetidas,
-      fase: "error",
-      error: repetidas ? `Las ${repetidas} preguntas de esta cartilla ya estaban en tu banco.` : "No encontramos preguntas de selección múltiple en este archivo.",
-    });
+    const fallos = Object.values(cc.paginas)
+      .map((p) => p.error)
+      .filter((x): x is string => !!x);
+    await guardar({ ...cc, crudas, repetidas, fase: "error", error: mensajeFallo(fallos, cc.total) });
     return;
   }
   const exp: Cartilla["exp"] = {};
@@ -539,32 +608,82 @@ async function terminar(id: string) {
   }
 }
 
-// ---------- sincronización entre dispositivos ----------
-async function subir(c: Cartilla) {
-  const codigo = sync.get().codigo;
-  if (!codigo || c.fase !== "listo") return;
-  const cuerpo = JSON.stringify({ id: c.id, nombre: c.nombre, materia: c.materia, creado: c.creado, unidades: c.unidades, repetidas: c.repetidas });
-  if (cuerpo.length > 5_700_000) return; // muy grande para la nube: se queda solo en este dispositivo
-  const r = await fetch(`/api/cartillas/${codigo}/${c.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: cuerpo }).catch(() => null);
-  if (r?.ok) {
-    const x = lista.find((y) => y.id === c.id);
-    if (x) await guardar({ ...x, sincronizada: true });
+// ---------- sincronización con la cuenta ----------
+
+/** Cartillas globales: las publica el administrador y las usa todo el mundo (solo lectura). */
+export async function cargarGlobales() {
+  if (!auth.get().cuenta) {
+    if (globales.length) {
+      globales = [];
+      avisar();
+    }
+    return;
   }
+  const r = await fetch("/api/global", { cache: "no-store" }).catch(() => null);
+  if (!r?.ok) return;
+  const indice = (await r.json().catch(() => null)) as { id: string }[] | null;
+  if (!Array.isArray(indice)) return;
+  const nuevas: Cartilla[] = [];
+  for (const x of indice) {
+    const rr = await fetch(`/api/global/${x.id}`, { cache: "no-store" }).catch(() => null);
+    if (!rr?.ok) continue;
+    const d = await rr.json().catch(() => null);
+    if (d) nuevas.push({ ...d, activa: true, total: 0, fase: "listo", paginas: {}, exp: {}, sincronizada: true, global: true });
+  }
+  globales = nuevas;
+  avisar();
+}
+
+export function useGlobales() {
+  return useSyncExternalStore(cartillas.subscribe, () => globales, () => globales);
+}
+
+/** Huella de las globales para que el banco se recomponga cuando cambian. */
+export const firmaGlobal = () =>
+  globales.map((c) => `${c.id}:${c.unidades.reduce((a, u) => a + u.preguntas.length, 0)}`).join("|");
+
+/** Al cerrar sesión se van las cartillas de la cuenta, para que otra persona no las vea. */
+export async function cerrarCuenta() {
+  globales = [];
+  const fuera = lista.filter((c) => c.sincronizada || c.global);
+  lista = lista.filter((c) => !fuera.includes(c));
+  for (const c of fuera) await idb.del("cartillas", c.id);
+  avisar();
+}
+
+async function subir(c: Cartilla) {
+  if (!auth.get().cuenta || c.fase !== "listo") return;
+  const cuerpo = JSON.stringify({ id: c.id, nombre: c.nombre, materia: c.materia, creado: c.creado, unidades: c.unidades, repetidas: c.repetidas, global: !!c.global });
+  if (cuerpo.length > 5_700_000) return; // muy grande para la nube: se queda solo en este dispositivo
+  const ruta = c.global ? `/api/global/${c.id}` : `/api/cartillas/${c.id}`;
+  const r = await fetch(ruta, { method: "PUT", headers: { "content-type": "application/json" }, body: cuerpo }).catch(() => null);
+  if (!r?.ok) return;
+  const x = lista.find((y) => y.id === c.id);
+  if (x) await guardar({ ...x, sincronizada: true });
+  if (c.global) await cargarGlobales();
 }
 
 let sincronizando = false;
+
 export async function sincronizarCartillas() {
-  const codigo = sync.get().codigo;
-  if (!codigo || sincronizando) return;
+  if (!auth.get().cuenta) {
+    if (globales.length) {
+      globales = [];
+      avisar();
+    }
+    return;
+  }
+  if (sincronizando) return;
   sincronizando = true;
   try {
     await listoP;
-    const r = await fetch(`/api/cartillas/${codigo}`, { cache: "no-store" }).catch(() => null);
+    await cargarGlobales();
+    const r = await fetch("/api/cartillas", { cache: "no-store" }).catch(() => null);
     if (!r?.ok) return;
     const remotas = (await r.json()) as { id: string }[];
     const ids = new Set(remotas.map((x) => x.id));
     // borradas en otro dispositivo
-    for (const c of lista.filter((x) => x.sincronizada && !ids.has(x.id))) {
+    for (const c of lista.filter((x) => x.sincronizada && !x.global && !ids.has(x.id))) {
       lista = lista.filter((x) => x.id !== c.id);
       await idb.del("cartillas", c.id);
     }
@@ -572,10 +691,10 @@ export async function sincronizarCartillas() {
     // nuevas de otro dispositivo
     for (const x of remotas) {
       if (lista.some((c) => c.id === x.id)) continue;
-      const rr = await fetch(`/api/cartillas/${codigo}/${x.id}`, { cache: "no-store" }).catch(() => null);
+      const rr = await fetch(`/api/cartillas/${x.id}`, { cache: "no-store" }).catch(() => null);
       if (!rr?.ok) continue;
-      const d = await rr.json();
-      await guardar({ ...d, activa: true, total: 0, fase: "listo", paginas: {}, exp: {}, sincronizada: true });
+      const d = await rr.json().catch(() => null);
+      if (d) await guardar({ ...d, activa: true, total: 0, fase: "listo", paginas: {}, exp: {}, sincronizada: true });
     }
     // de este dispositivo que aún no se han subido
     for (const c of lista.filter((x) => x.fase === "listo" && !x.sincronizada)) await subir(c);
@@ -585,11 +704,8 @@ export async function sincronizarCartillas() {
 }
 
 if (typeof window !== "undefined") {
-  let ultimo = sync.get().codigo;
-  sync.subscribe(() => {
-    const c = sync.get().codigo;
-    if (c && c !== ultimo) void sincronizarCartillas();
-    ultimo = c;
+  auth.subscribe(() => void sincronizarCartillas());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void sincronizarCartillas();
   });
-  document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && void sincronizarCartillas());
 }

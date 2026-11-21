@@ -1,37 +1,62 @@
-// Solo desarrollo local: imita las funciones de Netlify /api/ia y /api/cartillas en memoria.
+// Solo desarrollo local: imita las funciones de Netlify en memoria.
+// Cuentas, sesiones, cartillas por usuario y globales usan la misma lógica que producción.
 import type { Hono } from "hono";
 import { ejecutar } from "../../../../netlify/shared/ia.ts";
+import { sesionDe } from "../../../../netlify/shared/auth.ts";
+import { claveServidor, leerClave, resolver } from "../../../../netlify/shared/claves.ts";
+import { almacenMemoria } from "../../../../netlify/shared/almacen.ts";
+import { manejarAuth } from "../../../../netlify/shared/api-auth.ts";
+import { manejarAdmin } from "../../../../netlify/shared/api-admin.ts";
+import { manejarCartillas } from "../../../../netlify/shared/api-cartillas.ts";
 
 const trabajos = new Map<string, any>();
-const cartillas = new Map<string, Map<string, any>>();
+const SIN_CLAVE = "Añade tu clave de OpenAI en «Mis cartillas» para poder subir cartillas.";
 
 export function devShim(app: Hono<any>) {
+  const almacen = almacenMemoria();
+
+  app.get("/api/ia/estado", async (c) => {
+    const u = await sesionDe(almacen, c.req.raw);
+    const propia = u ? Boolean(await leerClave(almacen, u.id)) : false;
+    const servidor = Boolean(u?.rol === "admin" && claveServidor());
+    return c.json({ configurada: claveServidor(), propia, servidor, puede: propia || servidor });
+  });
+
   app.post("/api/ia/:job", async (c) => {
+    const u = await sesionDe(almacen, c.req.raw);
+    if (!u) return c.json({ error: "Entra a tu cuenta para leer cartillas." }, 401);
     const job = c.req.param("job");
+    const previo = trabajos.get(job);
+    if (previo && previo.uid !== u.id) return c.json({ error: "No autorizado" }, 403);
+    const clave = await resolver(almacen, u);
+    if (!clave.clave && !clave.servidor) return c.json({ error: SIN_CLAVE }, 402);
     const e = await c.req.json();
     if (!trabajos.has(job)) {
-      trabajos.set(job, { estado: "pendiente" });
-      ejecutar(e)
-        .then((resultado) => trabajos.set(job, { estado: "listo", resultado }))
-        .catch((err) => trabajos.set(job, { estado: "error", error: String(err?.message ?? err).slice(0, 300) }));
+      trabajos.set(job, { estado: "pendiente", uid: u.id });
+      ejecutar(e, clave.clave)
+        .then((resultado) => trabajos.set(job, { estado: "listo", resultado, uid: u.id }))
+        .catch((err) => trabajos.set(job, { estado: "error", error: String(err?.message ?? err).slice(0, 300), uid: u.id }));
     }
     return c.json({ estado: "pendiente" }, 202);
   });
-  app.get("/api/ia/:job", (c) => c.json(trabajos.get(c.req.param("job")) ?? { estado: "error", error: "No existe" }));
-  const de = (k: string) => cartillas.get(k) ?? cartillas.set(k, new Map()).get(k)!;
-  app.get("/api/cartillas/:codigo", (c) =>
-    c.json([...de(c.req.param("codigo")).values()].map((x) => ({ id: x.id, nombre: x.nombre, materia: x.materia, preguntas: 0, creado: x.creado }))),
+
+  app.get("/api/ia/:job", async (c) => {
+    const u = await sesionDe(almacen, c.req.raw);
+    if (!u) return c.json({ error: "Entra a tu cuenta para leer cartillas." }, 401);
+    const t = trabajos.get(c.req.param("job"));
+    if (t?.uid && t.uid !== u.id) return c.json({ error: "No autorizado" }, 403);
+    if (!t) return c.json({ estado: "error", error: "No existe" });
+    return c.json({ estado: t.estado, resultado: t.resultado, error: t.error });
+  });
+
+  app.all("/api/auth/:accion", (c) => manejarAuth(c.req.raw, c.req.param("accion"), almacen));
+  app.all("/api/admin/:accion", (c) => manejarAdmin(c.req.raw, c.req.param("accion"), almacen));
+  app.all("/api/cartillas", (c) => manejarCartillas(c.req.raw, { almacen, id: null, global: false }));
+  app.all("/api/cartillas/:id", (c) =>
+    manejarCartillas(c.req.raw, { almacen, id: c.req.param("id"), global: false }),
   );
-  app.get("/api/cartillas/:codigo/:id", (c) => {
-    const x = de(c.req.param("codigo")).get(c.req.param("id"));
-    return x ? c.json(x) : c.json({ error: "No existe" }, 404);
-  });
-  app.put("/api/cartillas/:codigo/:id", async (c) => {
-    de(c.req.param("codigo")).set(c.req.param("id"), await c.req.json());
-    return c.json({ ok: true });
-  });
-  app.delete("/api/cartillas/:codigo/:id", (c) => {
-    de(c.req.param("codigo")).delete(c.req.param("id"));
-    return c.json({ ok: true });
-  });
+  app.all("/api/global", (c) => manejarCartillas(c.req.raw, { almacen, id: null, global: true }));
+  app.all("/api/global/:id", (c) =>
+    manejarCartillas(c.req.raw, { almacen, id: c.req.param("id"), global: true }),
+  );
 }

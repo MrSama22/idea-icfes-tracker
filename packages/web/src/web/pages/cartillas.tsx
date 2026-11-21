@@ -1,15 +1,47 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { ChevronLeft, FileUp, Loader2, Trash2, RotateCcw, Play, CheckCircle2, AlertTriangle, Sparkles, ImageIcon, FileText, X } from "lucide-react";
+import { ChevronLeft, FileUp, Globe, Loader2, LogIn, Trash2, RotateCcw, Play, CheckCircle2, AlertTriangle, Sparkles, ImageIcon, FileText, ShieldCheck, X, KeyRound } from "lucide-react";
 import { Shell, SectionTitle } from "../components/shell";
-import { cartillas, progreso, subirArchivos, useCartillas, type Cartilla } from "../lib/cartillas";
+import {
+  cartillas,
+  limpiarAviso,
+  progreso,
+  subirArchivos,
+  useAviso,
+  useCartillas,
+  useGlobales,
+  type Cartilla,
+} from "../lib/cartillas";
+import { auth, useAuth } from "../lib/auth";
 import { MATERIAS, type MateriaId } from "../lib/domain";
 import { store } from "../lib/store";
 import { cn } from "../lib/utils";
 
 export default function CartillasPage() {
   const lista = useCartillas();
+  const globales = useGlobales();
+  const aviso = useAviso();
+  const { cuenta } = useAuth();
+  const [ia, setIa] = useState<{ puede: boolean; propia: boolean; servidor: boolean } | null>(null);
+
+  const recargarIA = () => {
+    fetch("/api/ia/estado", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setIa(d ?? null))
+      .catch(() => setIa(null));
+  };
+
+  // La llave es por cuenta: hay que volver a consultar cuando entra o sale alguien.
+  useEffect(() => {
+    if (!cuenta) {
+      setIa(null);
+      return;
+    }
+    recargarIA();
+  }, [cuenta?.id]);
+  const iaLista = ia ? ia.puede : null;
   const [, nav] = useLocation();
+  const [publicarGlobal, setPublicarGlobal] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [nombre, setNombre] = useState("");
   const [materia, setMateria] = useState<MateriaId | null>(null);
@@ -31,10 +63,11 @@ export default function CartillasPage() {
     setError(null);
     setPaso("Preparando…");
     try {
-      await subirArchivos(files, nombre, materia, setPaso);
+      await subirArchivos(files, nombre, materia, setPaso, publicarGlobal && cuenta?.rol === "admin");
       setFiles([]);
       setNombre("");
       setMateria(null);
+      setPublicarGlobal(false);
     } catch (e) {
       setError(String((e as Error).message ?? e));
     } finally {
@@ -67,9 +100,62 @@ export default function CartillasPage() {
         con sus textos y gráficas, y les ponemos explicación. Después salen en tus simulacros generados.
       </p>
 
+      {iaLista === false && (
+        <div className="mt-5 rounded-lg border-l-4 border-[#D99A06] bg-[#D99A06]/10 px-3 py-2.5 text-sm">
+          {cuenta && cuenta.rol !== "admin" ? (
+            <>
+              <b>Te falta tu clave de IA.</b> Cada cuenta usa su propia clave de OpenAI para leer las cartillas (la del
+              servidor no se comparte), así que todavía no puedes subir. Agrégala aquí abajo, en «Tu clave de OpenAI».
+            </>
+          ) : (
+            <>
+              <b>La IA no está configurada.</b> Falta <code className="font-mono text-[12px]">OPENAI_API_KEY</code> (o{" "}
+              <code className="font-mono text-[12px]">AI_GATEWAY_API_KEY</code>) en este servidor, así que todavía no se
+              pueden leer cartillas. Añádela en <code className="font-mono text-[12px]">.env</code> (o en Netlify →
+              Environment variables) y recarga la página.
+            </>
+          )}
+        </div>
+      )}
+
+      {aviso && (
+        <div className="mt-4 flex items-start gap-2 rounded-md border-l-4 border-accent bg-accent/5 px-3 py-2 text-sm">
+          <span className="flex-1">{aviso}</span>
+          <button
+            onClick={limpiarAviso}
+            aria-label="Cerrar aviso"
+            className="p-0.5 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      )}
+
+      {!cuenta ? (
+        <div className="mt-6 rounded-xl border-2 border-foreground bg-card p-6">
+          <ShieldCheck className="size-7 text-[#2E7D4F]" />
+          <h2 className="mt-3 font-display text-2xl font-extrabold">Entra para guardar tus cartillas</h2>
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+            Con una cuenta, cada cartilla que subas queda guardada en tu perfil y la encuentras en el celular o en otro
+            computador. Sin cuenta no se puede subir.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              to="/entrar"
+              className="inline-flex h-11 items-center gap-2 rounded-md bg-accent px-4 font-semibold text-accent-foreground"
+            >
+              <LogIn className="size-4" /> Entrar o crear cuenta
+            </Link>
+            <Link to="/" className="inline-flex h-11 items-center rounded-md border border-border px-4 text-sm font-semibold">
+              Volver al inicio
+            </Link>
+          </div>
+        </div>
+      ) : (
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
         <section>
           <SectionTitle n="01">Subir una cartilla</SectionTitle>
+          <ClaveIA ia={ia} recargar={recargarIA} />
           <div
             role="button"
             tabIndex={0}
@@ -145,6 +231,26 @@ export default function CartillasPage() {
             <p className="mt-1.5 text-xs text-muted-foreground">Si la cartilla trae varias materias, deja "Detectar sola".</p>
           </div>
 
+          {cuenta.rol === "admin" && (
+            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border-2 border-foreground bg-card px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={publicarGlobal}
+                onChange={(e) => setPublicarGlobal(e.target.checked)}
+                className="mt-1 size-4 shrink-0 accent-[#E2401C]"
+              />
+              <span className="text-sm">
+                <b className="flex items-center gap-1.5">
+                  <Globe className="size-3.5" /> Publicar para todas las cuentas
+                </b>
+                <span className="text-muted-foreground">
+                  Queda como cartilla global: todos la pueden practicar y desde el panel de administrador decides qué
+                  preguntas entran.
+                </span>
+              </span>
+            </label>
+          )}
+
           <div className="mt-5 rounded-lg border-l-4 border-[#D99A06] bg-[#D99A06]/10 px-3 py-2.5 text-sm">
             <b>Consejo:</b> incluye la página de <b>respuestas correctas (la clave)</b> si la tiene. Si no la trae, la IA resuelve
             cada pregunta y te avisamos que la respuesta no es oficial.
@@ -152,7 +258,7 @@ export default function CartillasPage() {
 
           <button
             data-testid="subir"
-            disabled={!files.length || !!paso}
+            disabled={!files.length || !!paso || iaLista === false}
             onClick={subir}
             className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-accent px-4 font-semibold text-accent-foreground transition hover:brightness-110 disabled:opacity-40 sm:w-auto sm:px-8"
           >
@@ -192,7 +298,147 @@ export default function CartillasPage() {
           )}
         </section>
       </div>
+      )}
+
+      {globales.length > 0 && (
+        <section className="mt-10">
+          <SectionTitle
+            n="03"
+            aside={<span className="font-mono text-xs text-muted-foreground">{globales.length}</span>}
+          >
+            Cartillas globales
+          </SectionTitle>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Las publicó el administrador. Se practican igual que las tuyas y no las puedes editar.
+          </p>
+          <ul className="space-y-3">
+            {globales.map((c) => (
+              <li key={c.id} className="rounded-xl border-2 border-border bg-card p-4">
+                <div className="flex flex-wrap items-start gap-3">
+                  <Globe className="mt-0.5 size-5 shrink-0 text-[#2F5DA8]" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-display text-lg font-bold leading-tight">{c.nombre}</p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      {c.unidades.reduce((a, u) => a + u.preguntas.length, 0)} preguntas
+                      {c.materia ? ` · ${MATERIAS.find((m) => m.id === c.materia)?.corto ?? ""}` : ""}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => practicar(c)}
+                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md bg-foreground px-3 text-sm font-semibold text-background"
+                  >
+                    <Play className="size-3.5 fill-current" /> Practicar
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </Shell>
+  );
+}
+
+/** Cada cuenta normal guarda su propia clave de OpenAI; el admin usa la del servidor. */
+function ClaveIA({
+  ia,
+  recargar,
+}: {
+  ia: { puede: boolean; propia: boolean; servidor: boolean } | null;
+  recargar: () => void;
+}) {
+  const { cuenta } = useAuth();
+  const [valor, setValor] = useState("");
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  if (!cuenta) return null;
+
+  if (cuenta.rol === "admin" && ia?.servidor && !ia.propia) {
+    return (
+      <div className="mt-4 flex items-start gap-2 rounded-lg border-l-4 border-[#2E7D4F] bg-[#2E7D4F]/10 px-3 py-2.5 text-sm">
+        <KeyRound className="mt-0.5 size-4 shrink-0 text-[#2E7D4F]" />
+        <span>
+          Estás usando la <b>clave de IA del servidor</b>. Solo tu cuenta de administrador puede usarla; cada cuenta normal
+          tiene que poner la suya.
+        </span>
+      </div>
+    );
+  }
+
+  const guardar = async () => {
+    setOcupado(true);
+    setAviso(null);
+    try {
+      await auth.guardarClaveIA(valor.trim());
+      setValor("");
+      setAviso("Clave guardada. Ya puedes subir cartillas.");
+      recargar();
+    } catch (e) {
+      setAviso(String((e as Error).message ?? e));
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const borrar = async () => {
+    setOcupado(true);
+    setAviso(null);
+    try {
+      await auth.borrarClaveIA();
+      setAviso("Clave borrada de tu cuenta.");
+      recargar();
+    } catch (e) {
+      setAviso(String((e as Error).message ?? e));
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 rounded-xl border-2 border-border bg-card p-4">
+      <p className="flex items-center gap-2 font-display text-base font-bold">
+        <KeyRound className="size-4 text-accent" /> Tu clave de OpenAI
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Cada cuenta usa su propia clave para leer las cartillas; la del servidor no se comparte. Se guarda en tu cuenta
+        (no en este navegador) y no se vuelve a mostrar. Consíguela en{" "}
+        <span className="font-mono text-[12px]">platform.openai.com/api-keys</span>.
+      </p>
+      {ia?.propia ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-[#2E7D4F]/10 px-2.5 py-1.5 text-sm font-semibold text-[#2E7D4F]">
+            <CheckCircle2 className="size-4" /> Clave guardada
+          </span>
+          <button
+            onClick={borrar}
+            disabled={ocupado}
+            className="h-9 rounded-md border border-border px-3 text-sm font-semibold hover:border-foreground disabled:opacity-40"
+          >
+            Borrar y poner otra
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <input
+            type="password"
+            value={valor}
+            onChange={(e) => setValor(e.target.value)}
+            placeholder="sk-..."
+            autoComplete="off"
+            className="h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-sm outline-none focus:border-foreground"
+          />
+          <button
+            onClick={guardar}
+            disabled={ocupado || valor.trim().length < 20}
+            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-md bg-foreground px-4 text-sm font-semibold text-background disabled:opacity-40"
+          >
+            {ocupado ? <Loader2 className="size-4 animate-spin" /> : null} Guardar clave
+          </button>
+        </div>
+      )}
+      {aviso && <p className="mt-2 text-sm text-accent">{aviso}</p>}
+    </div>
   );
 }
 
@@ -237,7 +483,14 @@ function Item({ c, onPracticar }: { c: Cartilla; onPracticar: () => void }) {
     <li className={cn("rounded-xl border-2 bg-card p-4", c.fase === "listo" ? "border-foreground" : "border-border")}>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate font-display text-lg font-bold leading-tight">{c.nombre}</p>
+          <p className="truncate font-display text-lg font-bold leading-tight">
+            {c.nombre}
+            {c.global && (
+              <span className="ml-2 rounded-[3px] bg-[#2F5DA8]/10 px-1.5 py-0.5 align-middle font-mono text-[10px] font-bold uppercase text-[#2F5DA8]">
+                Global
+              </span>
+            )}
+          </p>
           <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
             {new Date(c.creado).toLocaleDateString("es-CO", { day: "numeric", month: "short" })}
             {c.total > 0 && ` · ${c.total} páginas`}

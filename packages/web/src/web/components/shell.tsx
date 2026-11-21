@@ -1,5 +1,44 @@
 import { Link } from "wouter";
 import { cn } from "../lib/utils";
+import { auth, useAuth } from "../lib/auth";
+
+function Cuenta() {
+  const { cuenta } = useAuth();
+  if (!cuenta) {
+    return (
+      <Link
+        to="/entrar"
+        className="rounded-md border border-foreground bg-card px-3 py-1.5 text-sm font-semibold transition hover:bg-muted"
+      >
+        Entrar
+      </Link>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2">
+      {cuenta.rol === "admin" && (
+        <Link
+          to="/admin"
+          className="rounded-[3px] bg-accent px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-accent-foreground"
+        >
+          Admin
+        </Link>
+      )}
+      <span
+        className="hidden max-w-[13rem] truncate font-mono text-[11px] text-muted-foreground md:inline"
+        title={cuenta.email}
+      >
+        {cuenta.email}
+      </span>
+      <button
+        onClick={() => void auth.salir()}
+        className="rounded-md px-2 py-1.5 text-sm text-muted-foreground transition hover:text-accent"
+      >
+        Salir
+      </button>
+    </div>
+  );
+}
 
 export function Shell({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
   return (
@@ -14,7 +53,10 @@ export function Shell({ children, right }: { children: React.ReactNode; right?: 
               ICFES Error Analytics
             </span>
           </Link>
-          <div className="flex items-center gap-2">{right}</div>
+          <div className="flex items-center gap-2">
+            {right}
+            <Cuenta />
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl overflow-x-clip px-4 pb-24 pt-5">{children}</main>

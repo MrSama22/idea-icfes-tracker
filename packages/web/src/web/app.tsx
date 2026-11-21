@@ -10,6 +10,8 @@ import ExamenPage from "./pages/examen";
 import ResultadoPage from "./pages/resultado";
 import { ReforzarPage, TemaPage } from "./pages/reforzar";
 import CartillasPage from "./pages/cartillas";
+import EntrarPage from "./pages/entrar";
+import AdminPage from "./pages/admin";
 import { Provider } from "./components/provider";
 import { AgentFeedback, RunableBadge } from "@runablehq/website-runtime";
 
@@ -26,6 +28,8 @@ function App() {
         <Route path="/reforzar" component={ReforzarPage} />
         <Route path="/reforzar/:tema" component={TemaPage} />
         <Route path="/cartillas" component={CartillasPage} />
+        <Route path="/entrar" component={EntrarPage} />
+        <Route path="/admin" component={AdminPage} />
         <Route component={Index} />
       </Switch>
       {/* Do not remove — off by default, activated by parent iframe via postMessage */}

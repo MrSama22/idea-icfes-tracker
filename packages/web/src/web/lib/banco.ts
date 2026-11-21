@@ -1,6 +1,6 @@
 // Banco de preguntas oficiales (cuadernillos ICFES) + generador de simulacros + estadísticas por tema.
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { cartillas } from "./cartillas";
+import { cartillas, firmaGlobal } from "./cartillas";
 import { MATERIAS, qkey, type MateriaId, type Practica, type PracticaItem } from "./domain";
 
 export interface Figura {
@@ -114,7 +114,7 @@ function componer(): Banco | null {
   for (const c of cartillas.get()) for (const u of c.unidades) b.porId.set(u.id, u);
   for (const u of b.unidades) b.porId.set(u.id, u);
   for (const [m, ts] of Object.entries(b.temas)) for (const t of ts) b.temaPorId.set(t.id, { ...t, materia: m as MateriaId });
-  for (const u of propias) for (const q of u.preguntas) if (!b.temaPorId.has(q.tema)) q.tema = b.temas[u.materia]?.[0]?.id ?? q.tema;
+  for (const u of b.unidades) for (const q of u.preguntas) if (!b.temaPorId.has(q.tema)) q.tema = b.temas[u.materia]?.[0]?.id ?? q.tema;
   return b;
 }
 
@@ -130,7 +130,9 @@ cartillas.subscribe(() => {
     .get()
     .filter((c) => c.fase === "listo")
     .map((c) => `${c.id}${c.activa ? 1 : 0}${c.unidades.length}${c.nombre}`)
-    .join("|");
+    .join("|") +
+    "||" +
+    firmaGlobal();
   if (!base || f === firma) return;
   firma = f;
   cache = componer();
