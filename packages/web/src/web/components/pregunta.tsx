@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Check, ChevronDown, Lightbulb, Target, TriangleAlert, Wrench, X } from "lucide-react";
 import { Md, Rico } from "./md";
+import { Subrayable } from "./subrayar";
 import type { Pregunta, Unidad } from "../lib/banco";
 import { materiaById } from "../lib/domain";
 import { cn } from "../lib/utils";
@@ -46,7 +47,11 @@ export function Contexto({
           </span>
         )}
       </button>
-      {abierto && <Rico text={u.contexto} figuras={u.contextoFiguras} className="px-4 py-3 text-[15px]" />}
+      {abierto && (
+        <Subrayable zona={`ctx:${u.id}`}>
+          <Rico text={u.contexto} figuras={u.contextoFiguras} className="px-4 py-3 text-[15px]" />
+        </Subrayable>
+      )}
     </section>
   );
 }
@@ -95,10 +100,12 @@ export function PreguntaView({
         </span>
         {numero != null && <span className="font-display text-lg font-bold">Pregunta {numero}</span>}
         <span className="font-mono text-[11px] text-muted-foreground">
-          Cuadernillo{u.examen ? ` ${u.examen}` : ""} · nº {q.n}
+          {u.fuente ? `${u.fuente.nombre} · nº ${q.n}` : `Cuadernillo${u.examen ? ` ${u.examen}` : ""} · nº ${q.n}`}
         </span>
       </div>
-      <Rico text={q.enunciado} figuras={q.figuras} className="text-[15.5px]" />
+      <Subrayable zona={`q:${u.id}:${q.n}`}>
+        <Rico text={q.enunciado} figuras={q.figuras} className="text-[15.5px]" />
+      </Subrayable>
       <div className="mt-4 space-y-2" role="radiogroup">
         {q.opciones.map((o) => {
           const sel = elegida === o.l;
@@ -198,9 +205,14 @@ export function Explicacion({ q, elegida, temaNombre }: { q: Pregunta; elegida?:
           {q.subtema ? ` · ${q.subtema}` : ""}
         </p>
       )}
+      {q.claveIA && (
+        <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+          Tu cartilla no traía la respuesta de esta pregunta: la resolvió la IA con cuidado, pero podría equivocarse.
+        </p>
+      )}
       {sinExp ? (
         <Bloque icon={<Lightbulb className="size-3.5" />} titulo="Explicación">
-          <p>La explicación de esta pregunta todavía se está preparando. La respuesta oficial es {q.clave}.</p>
+          <p>La explicación de esta pregunta todavía se está preparando. La respuesta correcta es {q.clave}.</p>
         </Bloque>
       ) : (
         <>

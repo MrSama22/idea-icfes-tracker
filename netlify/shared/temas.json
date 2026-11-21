@@ -1,0 +1,42 @@
+{
+  "MAT": [
+    { "id": "mat-proporcion", "nombre": "Proporciones, porcentajes y regla de tres", "desc": "Razones, proporcionalidad directa e inversa, porcentajes, aumentos y descuentos, conversiones." },
+    { "id": "mat-graficas", "nombre": "Leer tablas y gráficas", "desc": "Extraer y comparar datos en tablas, diagramas de barras, circulares y de líneas; cambiar de representación." },
+    { "id": "mat-estadistica", "nombre": "Promedio, mediana y moda", "desc": "Medidas de tendencia central y de dispersión, interpretación de promedios." },
+    { "id": "mat-probabilidad", "nombre": "Probabilidad y conteo", "desc": "Casos favorables/posibles, combinaciones, eventos, diagramas de árbol." },
+    { "id": "mat-algebra", "nombre": "Ecuaciones y funciones", "desc": "Plantear y resolver ecuaciones, funciones lineales/cuadráticas/exponenciales, pendiente, interpretar expresiones." },
+    { "id": "mat-geometria", "nombre": "Geometría y medición", "desc": "Áreas, perímetros, volúmenes, ángulos, semejanza, Pitágoras, trigonometría básica, planos y coordenadas." },
+    { "id": "mat-argumentar", "nombre": "Validar afirmaciones y procedimientos", "desc": "Decidir si un razonamiento o afirmación es correcto y justificar por qué; detectar errores en procedimientos." }
+  ],
+  "LEC": [
+    { "id": "lec-literal", "nombre": "Entender lo que dice el texto", "desc": "Identificar información local, significado de palabras y expresiones en contexto, quién dice qué." },
+    { "id": "lec-global", "nombre": "Estructura y sentido global", "desc": "Idea principal, función de párrafos y conectores, relación entre partes, propósito del texto." },
+    { "id": "lec-critica", "nombre": "Evaluar y reflexionar", "desc": "Tesis y argumentos, supuestos, validez, intención del autor, contrastar con otros textos o puntos de vista." },
+    { "id": "lec-discontinuos", "nombre": "Textos con imágenes, cómics e infografías", "desc": "Leer caricaturas, infografías, tablas y textos que combinan imagen y texto." },
+    { "id": "lec-filosofia", "nombre": "Textos filosóficos y argumentativos", "desc": "Comprender posturas filosóficas, conceptos abstractos y argumentos de autores." }
+  ],
+  "CIE": [
+    { "id": "cie-biologia-celula", "nombre": "Célula, genética y cuerpo humano", "desc": "Estructuras celulares, ADN, herencia, sistemas del cuerpo, salud." },
+    { "id": "cie-ecologia", "nombre": "Ecosistemas y evolución", "desc": "Cadenas tróficas, relaciones entre especies, ciclos, adaptación y evolución." },
+    { "id": "cie-quimica-materia", "nombre": "Materia, mezclas y soluciones", "desc": "Estados, propiedades, separación de mezclas, concentración, tabla periódica." },
+    { "id": "cie-quimica-reacciones", "nombre": "Reacciones químicas", "desc": "Ecuaciones químicas, conservación de la masa, ácidos y bases, gases." },
+    { "id": "cie-fisica-movimiento", "nombre": "Movimiento y fuerzas", "desc": "Velocidad, aceleración, leyes de Newton, presión, flotación." },
+    { "id": "cie-fisica-energia", "nombre": "Energía, ondas y electricidad", "desc": "Conservación de la energía, calor, ondas, luz, sonido, circuitos." },
+    { "id": "cie-indagacion", "nombre": "Experimentos, variables y gráficas", "desc": "Diseño experimental, variables dependiente/independiente, control, conclusiones a partir de datos." }
+  ],
+  "SOC": [
+    { "id": "soc-constitucion", "nombre": "Constitución, derechos y Estado", "desc": "Derechos fundamentales, mecanismos de participación y protección, ramas del poder, organismos de control." },
+    { "id": "soc-historia", "nombre": "Historia de Colombia y del mundo", "desc": "Procesos históricos, causas y consecuencias, orden cronológico." },
+    { "id": "soc-geografia", "nombre": "Geografía, territorio y ambiente", "desc": "Relación sociedad-naturaleza, mapas, recursos, problemas ambientales." },
+    { "id": "soc-economia", "nombre": "Economía y sociedad", "desc": "Modelos económicos, mercado, desigualdad, efectos de políticas económicas." },
+    { "id": "soc-perspectivas", "nombre": "Perspectivas y dimensiones de un problema", "desc": "Identificar dimensiones en conflicto, intereses de actores, multiperspectividad, efectos de decisiones." },
+    { "id": "soc-fuentes", "nombre": "Analizar fuentes y argumentos", "desc": "Distinguir opiniones de hechos, evaluar fuentes, supuestos y prejuicios." }
+  ],
+  "ING": [
+    { "id": "ing-vocabulario", "nombre": "Vocabulario y avisos", "desc": "Relacionar palabras con descripciones y entender avisos/letreros cortos." },
+    { "id": "ing-conversaciones", "nombre": "Conversaciones cortas", "desc": "Elegir la respuesta adecuada en un diálogo (funciones comunicativas)." },
+    { "id": "ing-gramatica", "nombre": "Gramática en contexto", "desc": "Completar textos: tiempos verbales, preposiciones, conectores, pronombres, comparativos." },
+    { "id": "ing-lectura", "nombre": "Comprensión de lectura", "desc": "Información explícita en textos cortos y largos." },
+    { "id": "ing-inferencia", "nombre": "Inferencia y propósito del texto", "desc": "Deducir opiniones, intención del autor e ideas implícitas en textos largos." }
+  ]
+}

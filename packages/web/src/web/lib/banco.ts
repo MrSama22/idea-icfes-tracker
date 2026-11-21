@@ -1,5 +1,6 @@
 // Banco de preguntas oficiales (cuadernillos ICFES) + generador de simulacros + estadísticas por tema.
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { cartillas } from "./cartillas";
 import { MATERIAS, qkey, type MateriaId, type Practica, type PracticaItem } from "./domain";
 
 export interface Figura {
@@ -31,6 +32,8 @@ export interface Pregunta {
   estrategia: string;
   dificultad: number;
   seg: number;
+  /** la respuesta la decidió la IA porque la cartilla no traía clave */
+  claveIA?: boolean;
 }
 export interface Unidad {
   id: string;
@@ -40,6 +43,8 @@ export interface Unidad {
   contextoFiguras: Figura[];
   segCtx: number;
   preguntas: Pregunta[];
+  /** cartilla subida por el estudiante (ausente = cuadernillo oficial) */
+  fuente?: { id: string; nombre: string };
 }
 export interface Tema {
   id: string;
@@ -55,8 +60,16 @@ export interface Leccion {
   practica: { enunciado: string; opciones: Record<string, string>; correcta: string; explicacion: string }[];
   recordar: string[];
 }
+export interface Video {
+  id: string;
+  titulo: string;
+  canal: string;
+  dur: number;
+  por_que: string;
+}
 export interface Banco {
   v: number;
+  videos: Record<string, Video[]>;
   temas: Record<MateriaId, Tema[]>;
   lecciones: Record<string, Leccion>;
   unidades: Unidad[];
@@ -65,21 +78,23 @@ export interface Banco {
   temaPorId: Map<string, Tema & { materia: MateriaId }>;
 }
 
-let promesa: Promise<Banco> | null = null;
+type Base = Omit<Banco, "porId" | "temaPorId">;
+let promesa: Promise<Base> | null = null;
+let base: Base | null = null;
 let cache: Banco | null = null;
+const subs = new Set<() => void>();
 
-export function cargarBanco(): Promise<Banco> {
+/** Solo el banco oficial (sin cartillas propias). */
+export function cargarBase(): Promise<Base> {
   if (!promesa) {
     promesa = fetch("/banco/banco.json")
       .then((r) => {
         if (!r.ok) throw new Error("No se pudo cargar el banco de preguntas");
         return r.json();
       })
-      .then((b: Banco) => {
-        b.porId = new Map(b.unidades.map((u) => [u.id, u]));
-        b.temaPorId = new Map();
-        for (const [m, ts] of Object.entries(b.temas)) for (const t of ts) b.temaPorId.set(t.id, { ...t, materia: m as MateriaId });
-        cache = b;
+      .then((b: Base) => {
+        b.videos ??= {};
+        base = b;
         return b;
       })
       .catch((e) => {
@@ -90,14 +105,53 @@ export function cargarBanco(): Promise<Banco> {
   return promesa;
 }
 
+/** Banco oficial + preguntas de las cartillas subidas y activas. */
+function componer(): Banco | null {
+  if (!base) return null;
+  const propias = cartillas.unidades();
+  const b: Banco = { ...base, unidades: [...base.unidades, ...propias], porId: new Map(), temaPorId: new Map() };
+  // las prácticas viejas pueden referirse a cartillas desactivadas: igual se pueden abrir
+  for (const c of cartillas.get()) for (const u of c.unidades) b.porId.set(u.id, u);
+  for (const u of b.unidades) b.porId.set(u.id, u);
+  for (const [m, ts] of Object.entries(b.temas)) for (const t of ts) b.temaPorId.set(t.id, { ...t, materia: m as MateriaId });
+  for (const u of propias) for (const q of u.preguntas) if (!b.temaPorId.has(q.tema)) q.tema = b.temas[u.materia]?.[0]?.id ?? q.tema;
+  return b;
+}
+
+export async function cargarBanco(): Promise<Banco> {
+  await Promise.all([cargarBase(), cartillas.listo()]);
+  if (!cache) cache = componer();
+  return cache!;
+}
+
+let firma = "";
+cartillas.subscribe(() => {
+  const f = cartillas
+    .get()
+    .filter((c) => c.fase === "listo")
+    .map((c) => `${c.id}${c.activa ? 1 : 0}${c.unidades.length}${c.nombre}`)
+    .join("|");
+  if (!base || f === firma) return;
+  firma = f;
+  cache = componer();
+  subs.forEach((f) => f());
+});
+
 export function useBanco() {
-  const [b, setB] = useState<Banco | null>(cache);
+  const b = useSyncExternalStore(
+    (f) => {
+      subs.add(f);
+      return () => subs.delete(f);
+    },
+    () => cache,
+    () => cache,
+  );
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (b) return;
     let vivo = true;
     cargarBanco()
-      .then((x) => vivo && setB(x))
+      .then(() => vivo && subs.forEach((f) => f()))
       .catch((e) => vivo && setError(String(e.message ?? e)));
     return () => {
       vivo = false;
@@ -106,11 +160,12 @@ export function useBanco() {
   return { banco: b, error };
 }
 
-export const img = (f: string) => `/banco/img/${f}.webp`;
+export const img = (f: string) => (f.startsWith("data:") || f.startsWith("blob:") ? f : `/banco/img/${f}.webp`);
 export const ilus = (temaId: string) => `/banco/ilus/${temaId}.webp`;
 
 /** Etiqueta del cuadernillo de origen. */
 export function origen(u: Unidad) {
+  if (u.fuente) return u.fuente.nombre;
   const m = MATERIAS.find((x) => x.id === u.materia)!;
   return u.materia === "ING" ? `${m.nombre} · examen ${u.examen}` : m.nombre;
 }
@@ -214,6 +269,64 @@ export function planear(b: Banco, materias: MateriaId[], segundos: number, seed:
   const preguntas = items.reduce((a, it) => a + it.qs.length, 0);
   const seg = items.reduce((a, it) => a + costo(b.porId.get(it.u)!, it.qs), 0);
   return { items, porMateria, preguntas, segundos: seg, todo: preguntas === totalTam };
+}
+
+/**
+ * Simulacro enfocado en temas concretos (los puntos débiles del estudiante).
+ * `temaIds` va del más débil al menos débil: los primeros pesan más. Las preguntas que ya falló suman puntos
+ * (vale la pena volver a intentarlas) y un poco de azar evita que siempre salga lo mismo.
+ * De cada grupo con texto común se toman solo las preguntas de esos temas (el texto se muestra completo).
+ */
+export function planearEnfocado(
+  b: Banco,
+  temaIds: string[],
+  segundos: number,
+  seed: number,
+  vistas: Set<string> = new Set(),
+  fallos: Set<string> = new Set(),
+): Plan & { porTema: Record<string, number> } {
+  const r = rng(seed);
+  const peso = new Map(temaIds.map((t, i) => [t, 1 + (temaIds.length - i) / Math.max(1, temaIds.length)]));
+  const cands: { u: Unidad; qs: number[]; c: number; score: number }[] = [];
+  for (const u of b.unidades) {
+    const ps = u.preguntas.filter((p) => peso.has(p.tema));
+    if (!ps.length) continue;
+    let score = 0;
+    for (const p of ps) {
+      const k = qkey(u.id, p.n);
+      score += peso.get(p.tema)!;
+      if (fallos.has(k)) score += 1.2;
+      else if (!vistas.has(k)) score += 0.4;
+    }
+    const qs = ps.map((p) => p.n);
+    const c = costo(u, qs);
+    // por minuto invertido, con algo de azar
+    cands.push({ u, qs, c, score: (score / Math.max(1, c / 120)) * (0.6 + r() * 0.8) });
+  }
+  cands.sort((a, c) => c.score - a.score);
+  let rest = segundos;
+  const elegidas: typeof cands = [];
+  for (const x of cands) {
+    if (x.c <= rest) {
+      elegidas.push(x);
+      rest -= x.c;
+    }
+  }
+  const orden = MATERIAS.map((m) => m.id);
+  elegidas.sort((a, c) => orden.indexOf(a.u.materia) - orden.indexOf(c.u.materia));
+  const items = elegidas.map((x) => ({ u: x.u.id, qs: x.qs }));
+  const porMateria: Record<string, number> = {};
+  const porTema: Record<string, number> = {};
+  for (const x of elegidas) {
+    porMateria[x.u.materia] = (porMateria[x.u.materia] ?? 0) + x.qs.length;
+    for (const n of x.qs) {
+      const t = x.u.preguntas.find((p) => p.n === n)!.tema;
+      porTema[t] = (porTema[t] ?? 0) + 1;
+    }
+  }
+  const preguntas = items.reduce((a, it) => a + it.qs.length, 0);
+  const total = cands.reduce((a, x) => a + x.qs.length, 0);
+  return { items, porMateria, porTema, preguntas, segundos: segundos - rest, todo: preguntas === total };
 }
 
 /** Lista plana de preguntas de una práctica, en orden. */

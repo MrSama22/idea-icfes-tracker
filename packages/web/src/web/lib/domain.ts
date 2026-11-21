@@ -138,6 +138,8 @@ export interface Practica {
   iniciadoEn: number | null;
   finalizado: boolean;
   finalizadoEn?: number;
+  /** zona → [inicio, fin, color] */
+  subrayados?: Record<string, [number, number, number][]>;
   registroId?: string; // simulacro del registro de errores creado al terminar
   creadoEn: number;
   updatedAt?: number;

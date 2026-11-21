@@ -15,6 +15,7 @@ import {
   statsTemas,
   useBanco,
   type TemaStat,
+  type Video,
 } from "../lib/banco";
 import { MATERIAS, materiaById, pct } from "../lib/domain";
 import { store } from "../lib/store";
@@ -197,6 +198,56 @@ function MiniPregunta({
   );
 }
 
+function Videos({ vs }: { vs?: Video[] }) {
+  if (!vs?.length) return null;
+  return (
+    <section data-testid="videos">
+      <SectionTitle n="▶">Videos que te ayudan</SectionTitle>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {vs.map((v) => (
+          <VideoCard key={v.id} v={v} />
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">Videos de YouTube elegidos para este tema. Se reproducen aquí mismo.</p>
+    </section>
+  );
+}
+
+function VideoCard({ v }: { v: Video }) {
+  const [play, setPlay] = useState(false);
+  const dur = `${Math.floor(v.dur / 60)}:${String(v.dur % 60).padStart(2, "0")}`;
+  return (
+    <div className="overflow-hidden rounded-xl border-2 border-foreground bg-card">
+      <div className="relative aspect-video bg-black">
+        {play ? (
+          <iframe
+            src={`https://www.youtube-nocookie.com/embed/${v.id}?autoplay=1&rel=0&hl=es`}
+            title={v.titulo}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            className="absolute inset-0 size-full"
+          />
+        ) : (
+          <button onClick={() => setPlay(true)} aria-label={`Ver ${v.titulo}`} className="group absolute inset-0">
+            <img src={`https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`} alt="" loading="lazy" className="size-full object-cover opacity-90 transition group-hover:opacity-100" />
+            <span className="absolute inset-0 grid place-items-center">
+              <span className="grid size-14 place-items-center rounded-full bg-accent text-white shadow-lg transition group-hover:scale-110">
+                <Play className="ml-0.5 size-6 fill-current" />
+              </span>
+            </span>
+            <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 font-mono text-[11px] text-white">{dur}</span>
+          </button>
+        )}
+      </div>
+      <div className="p-3">
+        <p className="line-clamp-2 font-semibold leading-snug">{v.titulo}</p>
+        <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">{v.canal}</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">{v.por_que}</p>
+      </div>
+    </div>
+  );
+}
+
 export function TemaPage() {
   const { tema: tid } = useParams<{ tema: string }>();
   const [, nav] = useLocation();
@@ -259,6 +310,8 @@ export function TemaPage() {
               </div>
             </div>
           </section>
+
+          <Videos vs={banco.videos?.[tid]} />
 
           <section>
             <SectionTitle n="01">Paso a paso</SectionTitle>
@@ -328,6 +381,11 @@ export function TemaPage() {
         <p className="mx-auto mt-8 max-w-3xl rounded-xl border border-dashed border-border p-5 text-sm">
           La lección de este tema se está preparando. Mientras tanto puedes practicar con preguntas reales.
         </p>
+      )}
+      {!lec && (
+        <div className="mx-auto mt-8 max-w-3xl">
+          <Videos vs={banco.videos?.[tid]} />
+        </div>
       )}
 
       <section className="mx-auto mt-8 max-w-3xl">

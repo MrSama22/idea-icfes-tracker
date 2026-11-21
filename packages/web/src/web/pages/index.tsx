@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
-import { Link, useLocation } from "wouter";
-import { ArrowRight, Download, FileUp, GraduationCap, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Link } from "wouter";
+import { ArrowRight, Download, FileUp, GraduationCap, Sparkles, Target, Trash2 } from "lucide-react";
 import { Shell, SectionTitle, GhostButton } from "../components/shell";
 import { Evolucion, TendenciaMaterias } from "../components/charts";
 import { useDB } from "../hooks/use-store";
 import { store } from "../lib/store";
-import { MATERIAS, defaultPreguntas, fmtClock, elapsedMs, type MateriaId } from "../lib/domain";
+import { MATERIAS, fmtClock, elapsedMs } from "../lib/domain";
+import { useCartillas } from "../lib/cartillas";
 import { estadisticas } from "../lib/analytics";
 import { download, erroresCSV } from "../lib/export";
 import { useInstall } from "../lib/pwa";
@@ -200,89 +201,6 @@ function Guardado() {
   );
 }
 
-const DURACIONES = [
-  { label: "Sesión 1 · 4h 30m", min: 270 },
-  { label: "Sesión 2 · 4h 30m", min: 270 },
-  { label: "Bloque 1h", min: 60 },
-  { label: "Bloque 2h", min: 120 },
-];
-
-function NuevoSimulacro() {
-  const db = useDB();
-  const [, navigate] = useLocation();
-  const [nombre, setNombre] = useState("");
-  const [duracion, setDuracion] = useState(270);
-  const [abierto, setAbierto] = useState(false);
-  const [preguntas, setPreguntas] = useState<Record<MateriaId, number>>(defaultPreguntas());
-
-  const crear = () => {
-    const s = store.crearSimulacro({
-      nombre: nombre || `Simulacro ${db.simulacros.length + 1}`,
-      duracionMin: duracion,
-      preguntas,
-    });
-    navigate(`/s/${s.id}`);
-  };
-
-  return (
-    <div className="rise rounded-lg border-2 border-foreground bg-card p-4 shadow-[4px_4px_0_0_var(--foreground)] sm:p-5">
-      <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">
-        Nuevo simulacro
-      </p>
-      <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-        <input
-          value={nombre}
-          onChange={(e) => setNombre(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && crear()}
-          placeholder={`Simulacro ${db.simulacros.length + 1}`}
-          className="h-12 flex-1 rounded-md border border-border bg-background px-3 text-base outline-none focus:border-foreground"
-        />
-        <select
-          value={duracion}
-          onChange={(e) => setDuracion(Number(e.target.value))}
-          className="h-12 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-foreground"
-        >
-          {DURACIONES.map((d) => (
-            <option key={d.label} value={d.min}>
-              {d.label}
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={crear}
-          className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-accent px-5 font-semibold text-accent-foreground transition hover:brightness-110 active:scale-[0.98]"
-        >
-          <Plus className="size-4" /> Empezar
-        </button>
-      </div>
-      <button
-        onClick={() => setAbierto((v) => !v)}
-        className="mt-3 text-xs text-muted-foreground underline-offset-2 hover:underline"
-      >
-        {abierto ? "Ocultar" : "Ajustar"} preguntas por materia (para % de acierto)
-      </button>
-      {abierto && (
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {MATERIAS.map((m) => (
-            <label key={m.id} className="text-xs text-muted-foreground">
-              {m.corto}
-              <input
-                type="number"
-                min={0}
-                value={preguntas[m.id]}
-                onChange={(e) =>
-                  setPreguntas((p) => ({ ...p, [m.id]: Math.max(0, Number(e.target.value)) }))
-                }
-                className="mt-1 h-10 w-full rounded-md border border-border bg-background px-2 font-mono text-sm text-foreground outline-none focus:border-foreground"
-              />
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function Respaldo() {
   const db = useDB();
   const input = useRef<HTMLInputElement>(null);
@@ -342,23 +260,42 @@ function Respaldo() {
   );
 }
 
-function PracticarReal() {
-  const db = useDB();
-  const recientes = (db.practicas ?? []).slice(0, 4);
+function Empezar() {
   return (
-    <section className="mb-10">
-      <SectionTitle n="★">Practica con preguntas reales del ICFES</SectionTitle>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div className="rise rounded-xl border-2 border-foreground bg-foreground p-5 text-background shadow-[5px_5px_0_#E2401C] sm:p-6">
+      <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-accent">Empieza aquí</p>
+      <p className="mt-2 font-display text-3xl font-extrabold leading-tight">Generar simulacro</p>
+      <p className="mt-1 text-sm opacity-75">
+        Tú eliges el tiempo y las materias. Preguntas reales de los cuadernillos oficiales, con explicación de cada respuesta.
+      </p>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
         <Link
           to="/generar"
           data-testid="ir-generar"
-          className="group relative overflow-hidden rounded-xl border-2 border-foreground bg-foreground p-5 text-background shadow-[5px_5px_0_#E2401C] transition hover:-translate-y-0.5"
+          className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-md bg-accent px-4 font-semibold text-accent-foreground transition hover:brightness-110"
         >
-          <Sparkles className="size-6 text-accent" />
-          <p className="mt-3 font-display text-2xl font-extrabold leading-tight">Generar simulacro</p>
-          <p className="mt-1 text-sm opacity-75">Elige tiempo y materias. Preguntas al azar de los cuadernillos oficiales, con explicación de cada respuesta.</p>
-          <ArrowRight className="absolute right-5 top-5 size-5 transition group-hover:translate-x-1" />
+          <Sparkles className="size-4" /> Generar simulacro
         </Link>
+        <Link
+          to="/generar?enfoque=mejora"
+          data-testid="ir-mejora"
+          className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-md border border-background/40 px-4 font-semibold transition hover:border-background"
+        >
+          <Target className="size-4" /> Según mis puntos débiles
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function PracticarReal() {
+  const db = useDB();
+  const recientes = (db.practicas ?? []).slice(0, 4);
+  const nCart = useCartillas().filter((c) => c.fase === "listo").length;
+  return (
+    <section className="mb-10">
+      <SectionTitle n="★">Sigue practicando</SectionTitle>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Link
           to="/reforzar"
           data-testid="ir-reforzar"
@@ -367,7 +304,19 @@ function PracticarReal() {
           <img src="/banco/ilus/mat-argumentar.webp" alt="" className="pointer-events-none absolute -bottom-6 -right-8 w-48 opacity-90" />
           <GraduationCap className="size-6 text-accent" />
           <p className="mt-3 font-display text-2xl font-extrabold leading-tight">Reforzar temas</p>
-          <p className="relative mt-1 max-w-[16rem] text-sm text-muted-foreground">Lecciones sencillas e ilustradas de lo que más se te dificulta.</p>
+          <p className="relative mt-1 max-w-[16rem] text-sm text-muted-foreground">Lecciones sencillas e ilustradas, con videos, de lo que más se te dificulta.</p>
+        </Link>
+        <Link
+          to="/cartillas"
+          data-testid="ir-cartillas"
+          className="group relative overflow-hidden rounded-xl border-2 border-foreground bg-card p-5 transition hover:-translate-y-0.5"
+        >
+          <FileUp className="size-6 text-accent" />
+          <p className="mt-3 font-display text-2xl font-extrabold leading-tight">Mis cartillas</p>
+          <p className="mt-1 max-w-[18rem] text-sm text-muted-foreground">
+            {nCart ? `${nCart} cartilla${nCart > 1 ? "s" : ""} en tu banco. ` : ""}Sube un PDF o fotos y sus preguntas salen en tus simulacros.
+          </p>
+          <ArrowRight className="absolute right-5 top-5 size-5 transition group-hover:translate-x-1" />
         </Link>
       </div>
       {recientes.length > 0 && (
@@ -432,11 +381,11 @@ export default function Index() {
             </span>
           </h1>
           <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground">
-            Registra tus fallos del simulacro en un toque, clasifícalos por causa y descubre dónde
-            estás perdiendo puntaje en el ICFES.
+            Presenta simulacros con preguntas reales del ICFES, mira por qué fallaste cada una y refuerza justo los temas
+            donde estás perdiendo puntaje.
           </p>
         </div>
-        <NuevoSimulacro />
+        <Empezar />
       </section>
 
       <PracticarReal />
@@ -450,11 +399,11 @@ export default function Index() {
             </span>
           }
         >
-          Tus simulacros
+          Tu registro de errores
         </SectionTitle>
         {db.simulacros.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            Aún no hay simulacros. Crea el primero arriba y empieza a registrar.
+            Todavía está vacío. Se llena solo cada vez que terminas un simulacro generado: ahí verás tus errores por materia y por causa.
           </div>
         ) : (
           <ul className="divide-y divide-border border-y border-border">

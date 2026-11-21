@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from "wouter";
 import { ArrowLeft, ArrowRight, Flag, Grid3x3, Pause, Play, X } from "lucide-react";
 import { Contexto, Explicacion, PreguntaView } from "../components/pregunta";
 import { Cargando } from "./generar";
+import { AyudaSubrayado, BarraSubrayado, SubrayadoProvider } from "../components/subrayar";
 import { useDB, useNow } from "../hooks/use-store";
 import { aplanar, useBanco } from "../lib/banco";
 import { MATERIAS, fmtClock } from "../lib/domain";
@@ -113,6 +114,7 @@ export default function ExamenPage() {
   const ultima = i === flat.length - 1;
 
   return (
+    <SubrayadoProvider marcas={p.subrayados ?? {}} onChange={(m) => store.actualizarPractica(p.id, { subrayados: m })}>
     <div className="min-h-dvh pb-44">
       {/* Barra superior */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/90 backdrop-blur">
@@ -160,8 +162,10 @@ export default function ExamenPage() {
           <span>
             Pregunta <b className="text-foreground">{i + 1}</b> de {flat.length}
           </span>
-          <span>{respondidas} respondidas</span>
+          <span className="hidden sm:inline">{respondidas} respondidas</span>
+          <BarraSubrayado />
         </div>
+        <AyudaSubrayado />
         <div className={cn("grid grid-cols-1 gap-5", tieneCtx && "lg:grid-cols-2")}>
           {tieneCtx && (
             <div className="lg:sticky lg:top-20 lg:max-h-[calc(100dvh-7rem)] lg:self-start lg:overflow-y-auto scroll-fino">
@@ -304,6 +308,7 @@ export default function ExamenPage() {
         </Modal>
       )}
     </div>
+    </SubrayadoProvider>
   );
 }
 

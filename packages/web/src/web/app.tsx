@@ -1,6 +1,7 @@
 import { Route, Switch } from "wouter";
 import "./lib/pwa";
 import "./lib/sync";
+import "./lib/cartillas";
 import Index from "./pages/index";
 import SimulacroPage from "./pages/simulacro";
 import ReportePage from "./pages/reporte";
@@ -8,6 +9,7 @@ import GenerarPage from "./pages/generar";
 import ExamenPage from "./pages/examen";
 import ResultadoPage from "./pages/resultado";
 import { ReforzarPage, TemaPage } from "./pages/reforzar";
+import CartillasPage from "./pages/cartillas";
 import { Provider } from "./components/provider";
 import { AgentFeedback, RunableBadge } from "@runablehq/website-runtime";
 
@@ -23,6 +25,7 @@ function App() {
         <Route path="/p/:id/resultado" component={ResultadoPage} />
         <Route path="/reforzar" component={ReforzarPage} />
         <Route path="/reforzar/:tema" component={TemaPage} />
+        <Route path="/cartillas" component={CartillasPage} />
         <Route component={Index} />
       </Switch>
       {/* Do not remove — off by default, activated by parent iframe via postMessage */}

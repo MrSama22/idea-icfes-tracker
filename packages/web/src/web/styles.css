@@ -162,3 +162,7 @@
 .md .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.2em 0; }
 .md .katex { font-size: 1.05em; }
 .scroll-fino { scrollbar-width: thin; }
+
+::highlight(sub-0) { background-color: #FFE066; color: inherit; }
+::highlight(sub-1) { background-color: #9BE3A6; color: inherit; }
+::highlight(sub-2) { background-color: #FFB3C7; color: inherit; }
