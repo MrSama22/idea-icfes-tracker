@@ -168,7 +168,8 @@ export async function subirArchivos(files: File[], nombre: string, materia: Mate
         const pdfjs = await import("pdfjs-dist");
         const worker = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
         pdfjs.GlobalWorkerOptions.workerSrc = worker;
-        const doc = await pdfjs.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise;
+        const tarea = pdfjs.getDocument({ data: new Uint8Array(await f.arrayBuffer()) });
+        const doc = await tarea.promise;
         for (let i = 1; i <= doc.numPages && n < MAX_PAGINAS; i++) {
           onPaso?.(`Leyendo página ${i} de ${doc.numPages}…`);
           const page = await doc.getPage(i);
@@ -180,9 +181,9 @@ export async function subirArchivos(files: File[], nombre: string, materia: Mate
           await page.render({ canvas: cv, viewport: vp }).promise;
           n++;
           await idb.set("paginas", `${id}:${n}`, await aJpeg(cv, cv.width, cv.height));
-          page.cleanup();
+          try { page.cleanup(); } catch { /* sin importancia */ }
         }
-        await doc.destroy();
+        try { await tarea.destroy(); } catch { /* sin importancia */ }
       } else if (f.type.startsWith("image/")) {
         onPaso?.(`Leyendo imagen ${n + 1}…`);
         const bmp = await createImageBitmap(f);
