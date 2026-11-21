@@ -16,10 +16,11 @@ export const iaConfigurada = () => Boolean(env("AI_GATEWAY_API_KEY") || env("OPE
 
 type Papel = "extraer" | "explicar";
 
-/** Modelo según el proveedor: el Gateway usa ids con proveedor; OpenAI usa los suyos. */
-function modelo(papel: Papel) {
-  if (env("AI_GATEWAY_API_KEY")) return papel === "extraer" ? M_EXTRAER : M_EXPLICAR;
-  return env(papel === "extraer" ? "MODELO_EXTRAER" : "MODELO_EXPLICAR") ?? M_OPENAI;
+/** Modelo según el proveedor real de la llamada: el Gateway usa ids con proveedor; OpenAI usa los suyos. */
+function modelo(papel: Papel, viaGateway: boolean) {
+  if (viaGateway) return papel === "extraer" ? M_EXTRAER : M_EXPLICAR;
+  const propio = String(env(papel === "extraer" ? "MODELO_EXTRAER" : "MODELO_EXPLICAR") ?? "").trim();
+  return propio || M_OPENAI;
 }
 
 /** Llamada directa a la API de OpenAI (Chat Completions) con texto e imágenes. */
@@ -72,7 +73,7 @@ async function askJSON(papel: Papel, content: any[], system: string, clave?: str
     try {
       if (gw) {
         const { text } = await generateText({
-          model: gw(modelo(papel)),
+          model: gw(modelo(papel, true)),
           system,
           messages: [{ role: "user", content }],
           maxOutputTokens: 32000,
@@ -81,7 +82,7 @@ async function askJSON(papel: Papel, content: any[], system: string, clave?: str
         const raw = (m ? m[1] : text).trim();
         return JSON.parse(raw.slice(raw.search(/[\[{]/)));
       }
-      return await openaiJSON(modelo(papel), content, system, clave ?? env("OPENAI_API_KEY"));
+      return await openaiJSON(modelo(papel, false), content, system, clave ?? env("OPENAI_API_KEY"));
     } catch (e) {
       last = e;
       const t = String((e as Error)?.message ?? e);
