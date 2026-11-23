@@ -427,7 +427,7 @@ function ClaveIA({
             type="password"
             value={valor}
             onChange={(e) => setValor(e.target.value)}
-            placeholder="sk-... o AIza..."
+            placeholder="sk-... o AQ..."
             autoComplete="off"
             className="h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-sm outline-none focus:border-foreground"
           />

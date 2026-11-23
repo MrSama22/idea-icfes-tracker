@@ -11,8 +11,8 @@ function env(k: string) {
 export const claveServidor = () =>
   Boolean(env("OPENAI_API_KEY") || env("GEMINI_API_KEY") || env("AI_GATEWAY_API_KEY"));
 
-// OpenAI (sk-...) o Google AI Studio (AIza..., con nivel gratuito).
-const FORMATO = /^(sk-[A-Za-z0-9_-]{20,}|AIza[A-Za-z0-9_-]{20,})$/;
+// OpenAI (sk-...) o Google AI Studio (AIza... o AQ..., con nivel gratuito).
+const FORMATO = /^(sk-[A-Za-z0-9_-]{20,}|AIza[A-Za-z0-9_-]{20,}|AQ\.[A-Za-z0-9_.-]{20,})$/;
 export const claveValida = (clave: string) => FORMATO.test(String(clave ?? "").trim());
 
 export async function leerClave(a: Almacen, uid: string): Promise<string | null> {
