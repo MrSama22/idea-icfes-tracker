@@ -152,7 +152,7 @@ export function useAviso() {
 function mensajeFallo(fallos: string[], total: number) {
   const todo = fallos.join(" ").toLowerCase();
   if (todo.includes("openai_api_key") || todo.includes("ai_gateway_api_key") || todo.includes("falta openai")) {
-    return "La lectura con IA no está configurada en el servidor (falta OPENAI_API_KEY), así que no se pudieron leer las páginas.";
+    return "La lectura con IA no está configurada en el servidor (falta GEMINI_API_KEY u OPENAI_API_KEY), así que no se pudieron leer las páginas.";
   }
   if (todo.includes("insufficient_quota") || todo.includes("exceeded your current quota") || todo.includes("no credits remaining")) {
     return "La cuenta de IA se quedó sin saldo, así que no se pudieron leer las páginas. Añade créditos a la API o usa otra clave.";

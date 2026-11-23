@@ -111,7 +111,8 @@ export async function manejarAuth(req: Request, accion: string, a: Almacen): Pro
       if (!u) return error("Entra a tu cuenta primero.", 401);
       const d = await cuerpo(req);
       const clave = texto(d.clave);
-      if (!claveValida(clave)) return error("Esa clave no parece válida: debe empezar por sk- y tener más de 20 caracteres.");
+      if (!claveValida(clave))
+        return error("Esa clave no parece válida: debe ser de OpenAI (empieza por sk-) o de Google AI Studio (empieza por AIza).");
       await a.set(`k/${u.id}`, { clave, creado: Date.now() });
       return json({ ok: true, propia: true, servidor: u.rol === "admin" && claveServidor() });
     }

@@ -6,27 +6,49 @@ import temas from "./temas.json" with { type: "json" };
 const M_EXTRAER = "google/gemini-3.1-pro-preview";
 const M_EXPLICAR = "anthropic/claude-sonnet-5";
 const M_OPENAI = "gpt-4.1-mini"; // modelo económico con visión
+const M_GOOGLE = "gemini-3.5-flash-lite"; // modelo del nivel gratuito de Google AI Studio
 
 function env(k: string) {
   return (globalThis as any).Netlify?.env.get(k) ?? process.env[k];
 }
 
 /** ¿Está configurada la IA? Sin clave, las cartillas no se pueden leer. */
-export const iaConfigurada = () => Boolean(env("AI_GATEWAY_API_KEY") || env("OPENAI_API_KEY"));
+export const iaConfigurada = () =>
+  Boolean(env("AI_GATEWAY_API_KEY") || env("OPENAI_API_KEY") || env("GEMINI_API_KEY"));
 
 type Papel = "extraer" | "explicar";
+type Proveedor = "openai" | "google";
 
-/** Modelo según el proveedor real de la llamada: el Gateway usa ids con proveedor; OpenAI usa los suyos. */
-function modelo(papel: Papel, viaGateway: boolean) {
-  if (viaGateway) return papel === "extraer" ? M_EXTRAER : M_EXPLICAR;
-  const propio = String(env(papel === "extraer" ? "MODELO_EXTRAER" : "MODELO_EXPLICAR") ?? "").trim();
-  return propio || M_OPENAI;
+/** El proveedor sale de la propia clave: las de Google AI Studio empiezan por AIza. */
+function proveedor(clave?: string | null): Proveedor {
+  return String(clave ?? "").trim().startsWith("AIza") ? "google" : "openai";
 }
 
-/** Llamada directa a la API de OpenAI (Chat Completions) con texto e imágenes. */
-async function openaiJSON(model: string, content: any[], system: string, key: string | undefined) {
+const NOMBRE: Record<Proveedor, string> = { openai: "OpenAI", google: "Gemini" };
+
+const BASE: Record<Proveedor, string> = {
+  openai: "https://api.openai.com/v1",
+  google: "https://generativelanguage.googleapis.com/v1beta/openai",
+};
+
+/** Modelo según el proveedor real de la llamada: el Gateway usa ids con proveedor; OpenAI y Gemini los suyos. */
+function modelo(papel: Papel, prov: Proveedor = "openai", viaGateway = false) {
+  if (viaGateway) return papel === "extraer" ? M_EXTRAER : M_EXPLICAR;
+  const propio = String(env(papel === "extraer" ? "MODELO_EXTRAER" : "MODELO_EXPLICAR") ?? "").trim();
+  return propio || (prov === "google" ? M_GOOGLE : M_OPENAI);
+}
+
+/** Llamada directa (Chat Completions, compatible con OpenAI) con texto e imágenes. */
+async function chatJSON(
+  prov: Proveedor,
+  model: string,
+  content: any[],
+  system: string,
+  key: string | undefined,
+) {
   if (!key) throw new Error("Esta cuenta no tiene clave de IA configurada.");
-  const base = String(env("OPENAI_BASE_URL") ?? "https://api.openai.com/v1").replace(/\/+$/, "");
+  const base =
+    prov === "openai" ? String(env("OPENAI_BASE_URL") ?? BASE.openai).replace(/\/+$/, "") : BASE.google;
   const partes = content.map((p: any) =>
     p.type === "image"
       ? {
@@ -35,17 +57,20 @@ async function openaiJSON(model: string, content: any[], system: string, key: st
         }
       : { type: "text", text: String(p.text ?? "") },
   );
+  const peticion: any = {
+    model,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: partes },
+    ],
+  };
+  // OpenAI usa el nombre nuevo del límite; Gemini lo ignora, así que se manda el clásico.
+  if (prov === "google") peticion.max_tokens = 16000;
+  else peticion.max_completion_tokens = 32000;
   const r = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: partes },
-      ],
-      max_completion_tokens: 32000,
-    }),
+    body: JSON.stringify(peticion),
   });
   const cuerpo = await r.text();
   if (!r.ok) {
@@ -53,7 +78,7 @@ async function openaiJSON(model: string, content: any[], system: string, key: st
     try {
       m = JSON.parse(cuerpo)?.error?.message ?? cuerpo;
     } catch {}
-    throw new Error(`OpenAI ${r.status}: ${String(m).slice(0, 240)}`);
+    throw new Error(`${NOMBRE[prov]} ${r.status}: ${String(m).slice(0, 240)}`);
   }
   const data = JSON.parse(cuerpo);
   const text: string = data?.choices?.[0]?.message?.content ?? "";
@@ -63,17 +88,19 @@ async function openaiJSON(model: string, content: any[], system: string, key: st
 }
 
 async function askJSON(papel: Papel, content: any[], system: string, clave?: string | null, tries = 3) {
-  // Con la clave propia de una cuenta se va siempre a OpenAI; el gateway es solo del servidor.
+  // Con la clave propia de una cuenta se va a su proveedor (OpenAI o Google); el gateway es solo del servidor.
   const viaGateway = !clave && Boolean(env("AI_GATEWAY_API_KEY"));
   const gw = viaGateway
     ? createGateway({ baseURL: env("AI_GATEWAY_BASE_URL"), apiKey: env("AI_GATEWAY_API_KEY") })
     : null;
+  const usada = clave ?? env("OPENAI_API_KEY") ?? env("GEMINI_API_KEY") ?? null;
+  const prov = proveedor(usada);
   let last: unknown;
   for (let i = 0; i < tries; i++) {
     try {
       if (gw) {
         const { text } = await generateText({
-          model: gw(modelo(papel, true)),
+          model: gw(modelo(papel, "openai", true)),
           system,
           messages: [{ role: "user", content }],
           maxOutputTokens: 32000,
@@ -82,12 +109,16 @@ async function askJSON(papel: Papel, content: any[], system: string, clave?: str
         const raw = (m ? m[1] : text).trim();
         return JSON.parse(raw.slice(raw.search(/[\[{]/)));
       }
-      return await openaiJSON(modelo(papel, false), content, system, clave ?? env("OPENAI_API_KEY"));
+      return await chatJSON(prov, modelo(papel, prov), content, system, usada ?? undefined);
     } catch (e) {
       last = e;
       const t = String((e as Error)?.message ?? e);
       // La clave no sirve o no hay saldo: reintentar no arregla nada.
-      if (/401|403|invalid_api_key|insufficient_quota|no credits remaining|billing/i.test(t)) break;
+      if (/401|403|invalid_api_key|API key not valid|insufficient_quota|no credits remaining|billing/i.test(t)) break;
+      // En el nivel gratuito de Google los límites son por minuto: vale la pena esperar y reintentar.
+      if (prov === "google" && /429|RESOURCE_EXHAUSTED|rate limit/i.test(t)) {
+        await new Promise((listo) => setTimeout(listo, 2500 * (i + 1)));
+      }
     }
   }
   throw last;
