@@ -356,17 +356,9 @@ function ClaveIA({
 
   if (!cuenta) return null;
 
-  if (cuenta.rol === "admin" && ia?.servidor && !ia.propia) {
-    return (
-      <div className="mt-4 flex items-start gap-2 rounded-lg border-l-4 border-[#2E7D4F] bg-[#2E7D4F]/10 px-3 py-2.5 text-sm">
-        <KeyRound className="mt-0.5 size-4 shrink-0 text-[#2E7D4F]" />
-        <span>
-          Estás usando la <b>clave de IA del servidor</b>. Solo tu cuenta de administrador puede usarla; cada cuenta normal
-          tiene que poner la suya.
-        </span>
-      </div>
-    );
-  }
+  // El administrador puede tirar de la clave del servidor, pero también debe poder poner la suya:
+  // antes esta rama devolvía solo el aviso y no dejaba ningún formulario donde pegarla.
+  const usaServidor = cuenta.rol === "admin" && Boolean(ia?.servidor) && !ia?.propia;
 
   const guardar = async () => {
     setOcupado(true);
@@ -410,6 +402,15 @@ function ClaveIA({
         OpenRouter, que también tiene modelos gratuitos (<span className="font-mono text-[12px]">openrouter.ai/keys</span>)
         y empieza por <span className="font-mono text-[12px]">sk-or-</span>.
       </p>
+      {usaServidor && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border-l-4 border-[#2E7D4F] bg-[#2E7D4F]/10 px-3 py-2.5 text-sm">
+          <KeyRound className="mt-0.5 size-4 shrink-0 text-[#2E7D4F]" />
+          <span>
+            Ahora mismo se está usando la <b>clave de IA del servidor</b> (solo la puede usar tu cuenta de administrador).
+            Si pones una tuya aquí abajo, la tuya manda.
+          </span>
+        </div>
+      )}
       {ia?.propia ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-md bg-[#2E7D4F]/10 px-2.5 py-1.5 text-sm font-semibold text-[#2E7D4F]">
