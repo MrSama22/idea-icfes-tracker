@@ -33,8 +33,9 @@ const M_GROQ = "openai/gpt-oss-120b";
 const GROQ_ALTERNOS = ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"];
 const M_MISTRAL = "mistral-small-2506";
 const MISTRAL_ALTERNOS = ["ministral-8b-2512", "mistral-medium-2508"];
-const M_NVIDIA = "meta/llama-4-maverick-17b-128e-instruct";
-const NVIDIA_ALTERNOS = ["microsoft/phi-4-multimodal-instruct"];
+// NVIDIA retira modelos seguido (los de 2025 ya responden 410): se usan los que ven imágenes hoy.
+const M_NVIDIA = "nvidia/nemotron-3.5-super-vl-120b-a12b";
+const NVIDIA_ALTERNOS = ["nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"];
 const M_CEREBRAS = "gpt-oss-120b";
 const CEREBRAS_ALTERNOS = ["llama3.1-8b"];
 
@@ -144,7 +145,7 @@ function modelosDe(papel: Papel, prov: Proveedor): string[] {
 
 /** Errores que dicen "ese modelo no está o no sirve para generar contenido": hay que pasar a otro. */
 const modeloNoSirve = (t: string) =>
-  /\b404\b|not found|no endpoints|not a valid model|not supported for generateContent|is not supported|unsupported model|does not support/i.test(
+  /\b404\b|\b410\b|not found|no endpoints|not a valid model|not supported for generateContent|is not supported|unsupported model|does not support|end of life|no longer available|deprecated|respuesta vacía/i.test(
     t,
   );
 
@@ -179,6 +180,16 @@ function pistaOpenRouter(mensaje: string) {
     return " OpenRouter no reconoce esa clave: pégala de nuevo desde openrouter.ai/keys (empieza por sk-or-).";
   if (t.includes("no auth") || t.includes("invalid api key") || /\b401\b/.test(t))
     return " La clave no es válida: cópiala de nuevo desde openrouter.ai/keys (empieza por sk-or-).";
+  return "";
+}
+
+/** Traduce los fallos típicos de Mistral (clave y plan de API) a algo accionable. */
+function pistaMistral(mensaje: string) {
+  const t = mensaje.toLowerCase();
+  if (t.includes("subscription") || t.includes("billing") || /\b402\b/.test(t))
+    return " Tu cuenta de Mistral no tiene presupuesto de API: en console.mistral.ai elige el plan gratis (Experiment) o añade facturación, porque sin eso la clave no sirve.";
+  if (/\b401\b|invalid api key|unauthorized/i.test(t))
+    return " La clave no es válida: cópiala de nuevo desde console.mistral.ai/api-keys (empieza por mstrl_).";
   return "";
 }
 
@@ -269,7 +280,7 @@ async function chatJSON(
       ],
       ...(prov === "openai"
         ? { max_completion_tokens: 32000 }
-        : { max_tokens: prov === "openrouter" ? 16000 : 8000 }),
+        : { max_tokens: prov === "openrouter" || prov === "nvidia" ? 16000 : 8000 }),
     }),
   });
   const cuerpo = await r.text();
@@ -279,11 +290,16 @@ async function chatJSON(
       m = JSON.parse(cuerpo)?.error?.message ?? cuerpo;
     } catch {}
     const texto = String(m);
-    const pista = prov === "openrouter" ? pistaOpenRouter(texto) : "";
+    const pista =
+      prov === "openrouter" ? pistaOpenRouter(texto) : prov === "mistral" ? pistaMistral(texto) : "";
     throw new Error(`${NOMBRE[prov]} ${r.status}: ${texto.slice(0, 240)}${pista}`);
   }
   const data = JSON.parse(cuerpo);
-  return recoger(data?.choices?.[0]?.message?.content ?? "");
+  const mensaje = data?.choices?.[0]?.message?.content;
+  // Los modelos que razonan gastan tokens pensando: si se agotaron, llega vacío y otro modelo lo intenta.
+  if (!mensaje || !String(mensaje).trim())
+    throw new Error(`${NOMBRE[prov]} ${r.status}: respuesta vacía (se agotaron los tokens del modelo)`);
+  return recoger(String(mensaje));
 }
 
 const esperar = (ms: number) => new Promise((listo) => setTimeout(listo, ms));
