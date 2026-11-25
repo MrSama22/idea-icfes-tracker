@@ -505,8 +505,11 @@ async function ensamblar(id: string) {
   for (const u of crudas) for (const q of u.preguntas) q.clave = claves[String(q.n)] ?? q.clave;
 
   const cc = actual(id);
-  // Más de 2 preguntas repetidas ⇒ la cartilla ya está en el banco: se cancela la subida.
-  if (repetidas > 2) {
+  // Solo se cancela si la cartilla NO aporta nada nuevo (todas sus preguntas ya estaban).
+  // Antes bastaban 3 coincidencias para botar la cartilla entera, así que una cartilla nueva
+  // que comparte unas pocas preguntas con el banco o con otra cartilla se perdía sin razón.
+  const nuevas = crudas.reduce((a, u) => a + u.preguntas.length, 0);
+  if (repetidas > 2 && nuevas === 0) {
     await descartar(id);
     avisarError(`«${cc.nombre}» no se agregó: ${repetidas} de sus preguntas ya estaban en tu banco.`);
     throw new Error("Cartilla repetida");
