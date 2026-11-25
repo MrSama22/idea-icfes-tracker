@@ -395,12 +395,14 @@ async function extraer(id: string) {
 }
 
 // ---------- 3) unir páginas, quitar repetidas y recortar figuras ----------
+// Huella de una pregunta. Debe ser el texto COMPLETO: si se recorta, dos preguntas distintas
+// que comparten el inicio (el texto de lectura de un grupo de preguntas, por ejemplo) se toman
+// por la misma y la cartilla se cancelaba como «repetida» sin serlo.
 const norm = (s: string) =>
   (s ?? "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[^a-z0-9]/g, "")
-    .slice(0, 90);
+    .replace(/[^a-z0-9]/g, "");
 
 async function cargarImg(src: string) {
   const im = new Image();
@@ -456,6 +458,9 @@ async function ensamblar(id: string) {
   for (const p of Object.values(c.paginas)) for (const [k, v] of Object.entries(p.r?.claves ?? {})) if (typeof v === "string") claves[k] = v.trim().toUpperCase().slice(0, 1);
 
   const vistos = new Set<number>();
+  // Huellas de las preguntas de ESTA cartilla: si se repiten entre páginas se descartan sin
+  // contar como «ya estaban en tu banco» (eso cancelaba subidas de cartillas nuevas).
+  const deEsta = new Set<string>();
   const crudas: Cruda[] = [];
   let repetidas = 0;
   for (let n = 1; n <= c.total; n++) {
@@ -469,11 +474,15 @@ async function ensamblar(id: string) {
         if (!Number.isFinite(num) || vistos.has(num) || !Array.isArray(q.opciones) || q.opciones.length < 2) continue;
         vistos.add(num);
         const huella = norm(String(q.enunciado ?? "") + q.opciones.map((o: any) => String(o.texto ?? "")).join(""));
-        if (huella.length > 20 && conocidas.has(huella)) {
-          repetidas++;
-          continue;
+        if (huella.length > 40) {
+          // «Repetida» = ya está en el banco o en otra cartilla terminada (no en esta misma).
+          if (conocidas.has(huella)) {
+            repetidas++;
+            continue;
+          }
+          if (deEsta.has(huella)) continue;
+          deEsta.add(huella);
         }
-        conocidas.add(huella);
         qs.push({
           n: num,
           enunciado: String(q.enunciado ?? ""),
