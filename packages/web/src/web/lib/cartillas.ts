@@ -154,6 +154,10 @@ function mensajeFallo(fallos: string[], total: number) {
   if (todo.includes("openai_api_key") || todo.includes("ai_gateway_api_key") || todo.includes("falta openai")) {
     return "La lectura con IA no está configurada en el servidor (falta GEMINI_API_KEY, OPENROUTER_API_KEY u OPENAI_API_KEY), así que no se pudieron leer las páginas.";
   }
+  // Se agotaron todos los topes de las claves guardadas: no es un fallo del archivo.
+  if (todo.includes("se agotaron tus") || todo.includes("sin cupo") || todo.includes("no lee imágenes")) {
+    return "Se agotaron los topes gratuitos de todas tus claves de IA (cada servicio gratis tiene su cupo diario). Nada se perdió: pega otra clave en «Tu clave de IA» —de Gemini, Groq, OpenRouter o Mistral, que son gratis— y pulsa «Reintentar». La app va cambiando sola de una a otra.";
+  }
   if (todo.includes("openrouter") && (todo.includes("429") || todo.includes("rate limit") || todo.includes("free-model"))) {
     return "OpenRouter llegó a su tope gratuito (20 peticiones por minuto y 50 al día). Espera un poco o pon otra clave.";
   }

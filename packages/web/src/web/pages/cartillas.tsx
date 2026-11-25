@@ -22,7 +22,7 @@ export default function CartillasPage() {
   const globales = useGlobales();
   const aviso = useAviso();
   const { cuenta } = useAuth();
-  const [ia, setIa] = useState<{ puede: boolean; propia: boolean; servidor: boolean } | null>(null);
+  const [ia, setIa] = useState<{ puede: boolean; propia: boolean; claves?: number; servidor: boolean } | null>(null);
 
   const recargarIA = () => {
     fetch("/api/ia/estado", { cache: "no-store" })
@@ -104,9 +104,10 @@ export default function CartillasPage() {
         <div className="mt-5 rounded-lg border-l-4 border-[#D99A06] bg-[#D99A06]/10 px-3 py-2.5 text-sm">
           {cuenta && cuenta.rol !== "admin" ? (
             <>
-              <b>Te falta tu clave de IA.</b> Cada cuenta usa su propia clave para leer las cartillas (la del servidor no se
-              comparte), así que todavía no puedes subir. Agrégala aquí abajo, en «Tu clave de IA»: vale una de OpenAI o
-              una gratis de Google AI Studio o una de OpenRouter (empieza por sk-or- y tiene modelos :free).
+              <b>Te falta tu clave de IA.</b> Cada cuenta usa sus propias claves para leer las cartillas (las del servidor no
+              se comparten), así que todavía no puedes subir. Pégalas aquí abajo, en «Tu clave de IA»: valen las gratis de
+              Gemini, Groq, OpenRouter o Mistral, y puedes poner varias a la vez para que la app vaya cambiando de una a otra
+              cuando una llegue a su tope.
             </>
           ) : (
             <>
@@ -345,7 +346,7 @@ function ClaveIA({
   ia,
   recargar,
 }: {
-  ia: { puede: boolean; propia: boolean; servidor: boolean } | null;
+  ia: { puede: boolean; propia: boolean; claves?: number; servidor: boolean } | null;
   recargar: () => void;
 }) {
   const { cuenta } = useAuth();
@@ -394,13 +395,42 @@ function ClaveIA({
         <KeyRound className="size-4 text-accent" /> Tu clave de IA
       </p>
       <p className="mt-1 text-sm text-muted-foreground">
-        Cada cuenta usa su propia clave para leer las cartillas; la del servidor no se comparte. Se guarda en tu cuenta
-        (no en este navegador) y no se vuelve a mostrar. Sirve una de OpenAI ({" "}
-        <span className="font-mono text-[12px]">platform.openai.com/api-keys</span>) o, si te quedaste sin saldo, una
-        gratis de Google AI Studio (<span className="font-mono text-[12px]">aistudio.google.com/apikey</span>) o una de
-        OpenRouter, que también tiene modelos gratuitos (<span className="font-mono text-[12px]">openrouter.ai/keys</span>)
-        y empieza por <span className="font-mono text-[12px]">sk-or-</span>.
+        Cada cuenta usa sus propias claves para leer las cartillas; las del servidor no se comparten. Se guardan en tu
+        cuenta (no en este navegador) y no se vuelven a mostrar. <b>Pega varias, una por línea</b>: cuando una llega a su
+        tope gratuito, la app pasa sola a la siguiente. Ningún servicio de IA es gratis sin ningún tope; lo que hace la
+        app es repartir el trabajo entre todos los que tengas.
       </p>
+      <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+        <li>
+          · <b>Gemini</b> (gratis, lee figuras):{" "}
+          <span className="font-mono text-[12px]">aistudio.google.com/apikey</span> → empieza por{" "}
+          <span className="font-mono text-[12px]">AQ.</span> o <span className="font-mono text-[12px]">AIza</span>
+        </li>
+        <li>
+          · <b>Groq</b> (gratis, 1.000 al día):{" "}
+          <span className="font-mono text-[12px]">console.groq.com/keys</span> → empieza por{" "}
+          <span className="font-mono text-[12px]">gsk_</span> (solo texto: sirve para explicar, no para páginas con figuras)
+        </li>
+        <li>
+          · <b>OpenRouter</b> (gratis, 50 al día):{" "}
+          <span className="font-mono text-[12px]">openrouter.ai/keys</span> → empieza por{" "}
+          <span className="font-mono text-[12px]">sk-or-</span>
+        </li>
+        <li>
+          · <b>Mistral</b> (gratis, lee figuras):{" "}
+          <span className="font-mono text-[12px]">console.mistral.ai/api-keys</span> → pégala como{" "}
+          <span className="font-mono text-[12px]">mistral:tu-clave</span>
+        </li>
+        <li>
+          · <b>NVIDIA</b> (gratis para probar, lee figuras):{" "}
+          <span className="font-mono text-[12px]">build.nvidia.com</span> → empieza por{" "}
+          <span className="font-mono text-[12px]">nvapi-</span>
+        </li>
+        <li>
+          · <b>OpenAI</b> (de pago): <span className="font-mono text-[12px]">platform.openai.com/api-keys</span> → empieza
+          por <span className="font-mono text-[12px]">sk-</span>
+        </li>
+      </ul>
       {usaServidor && (
         <div className="mt-3 flex items-start gap-2 rounded-lg border-l-4 border-[#2E7D4F] bg-[#2E7D4F]/10 px-3 py-2.5 text-sm">
           <KeyRound className="mt-0.5 size-4 shrink-0 text-[#2E7D4F]" />
@@ -413,32 +443,34 @@ function ClaveIA({
       {ia?.propia ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-md bg-[#2E7D4F]/10 px-2.5 py-1.5 text-sm font-semibold text-[#2E7D4F]">
-            <CheckCircle2 className="size-4" /> Clave guardada
+            <CheckCircle2 className="size-4" />{" "}
+            {ia?.claves ? `${ia.claves} ${ia.claves === 1 ? "clave guardada" : "claves guardadas"}` : "Clave guardada"}
           </span>
           <button
             onClick={borrar}
             disabled={ocupado}
             className="h-9 rounded-md border border-border px-3 text-sm font-semibold hover:border-foreground disabled:opacity-40"
           >
-            Borrar y poner otra
+            Borrar y poner otras
           </button>
         </div>
       ) : (
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <input
-            type="password"
+        <div className="mt-3 flex flex-col gap-2">
+          <textarea
             value={valor}
             onChange={(e) => setValor(e.target.value)}
-            placeholder="sk-..., AQ... o sk-or-..."
+            rows={3}
+            placeholder={"Una clave por línea (o separadas por comas):\nAQ…\nsk-or-…\ngsk_…\nmistral:…"}
             autoComplete="off"
-            className="h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-sm outline-none focus:border-foreground"
+            spellCheck={false}
+            className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-foreground"
           />
           <button
             onClick={guardar}
             disabled={ocupado || valor.trim().length < 20}
-            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-md bg-foreground px-4 text-sm font-semibold text-background disabled:opacity-40"
+            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 self-start rounded-md bg-foreground px-4 text-sm font-semibold text-background disabled:opacity-40"
           >
-            {ocupado ? <Loader2 className="size-4 animate-spin" /> : null} Guardar clave
+            {ocupado ? <Loader2 className="size-4 animate-spin" /> : null} Guardar claves
           </button>
         </div>
       )}

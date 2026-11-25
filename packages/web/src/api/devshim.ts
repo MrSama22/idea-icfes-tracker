@@ -3,23 +3,24 @@
 import type { Hono } from "hono";
 import { ejecutar } from "../../../../netlify/shared/ia.ts";
 import { sesionDe } from "../../../../netlify/shared/auth.ts";
-import { claveServidor, leerClave, resolver } from "../../../../netlify/shared/claves.ts";
+import { claveServidor, leerClaves, resolver } from "../../../../netlify/shared/claves.ts";
 import { almacenMemoria } from "../../../../netlify/shared/almacen.ts";
 import { manejarAuth } from "../../../../netlify/shared/api-auth.ts";
 import { manejarAdmin } from "../../../../netlify/shared/api-admin.ts";
 import { manejarCartillas } from "../../../../netlify/shared/api-cartillas.ts";
 
 const trabajos = new Map<string, any>();
-const SIN_CLAVE = "Añade tu clave de OpenAI en «Mis cartillas» para poder subir cartillas.";
+const SIN_CLAVE =
+  "Añade tu clave de IA en «Mis cartillas» (una gratis de Gemini, Groq, OpenRouter o Mistral) para poder subir cartillas.";
 
 export function devShim(app: Hono<any>) {
   const almacen = almacenMemoria();
 
   app.get("/api/ia/estado", async (c) => {
     const u = await sesionDe(almacen, c.req.raw);
-    const propia = u ? Boolean(await leerClave(almacen, u.id)) : false;
+    const claves = u ? (await leerClaves(almacen, u.id)).length : 0;
     const servidor = Boolean(u?.rol === "admin" && claveServidor());
-    return c.json({ configurada: claveServidor(), propia, servidor, puede: propia || servidor });
+    return c.json({ configurada: claveServidor(), propia: claves > 0, claves, servidor, puede: claves > 0 || servidor });
   });
 
   app.post("/api/ia/:job", async (c) => {
@@ -28,12 +29,12 @@ export function devShim(app: Hono<any>) {
     const job = c.req.param("job");
     const previo = trabajos.get(job);
     if (previo && previo.uid !== u.id) return c.json({ error: "No autorizado" }, 403);
-    const clave = await resolver(almacen, u);
-    if (!clave.clave && !clave.servidor) return c.json({ error: SIN_CLAVE }, 402);
+    const { claves } = await resolver(almacen, u);
+    if (!claves.length) return c.json({ error: SIN_CLAVE }, 402);
     const e = await c.req.json();
     if (!trabajos.has(job)) {
       trabajos.set(job, { estado: "pendiente", uid: u.id });
-      ejecutar(e, clave.clave)
+      ejecutar(e, claves)
         .then((resultado) => trabajos.set(job, { estado: "listo", resultado, uid: u.id }))
         .catch((err) => trabajos.set(job, { estado: "error", error: String(err?.message ?? err).slice(0, 300), uid: u.id }));
     }

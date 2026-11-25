@@ -11,9 +11,9 @@ export default async (req: Request) => {
   const entrada = await blobs.get<any>(`in/${job}`, { type: "json" });
   if (!entrada) return;
   try {
-    const { clave } = await resolver(almacenBlobs(), { id: String(entrada.uid), rol: entrada.rol });
-    if (!clave) throw new Error("La cuenta no tiene clave de IA configurada.");
-    const resultado = await ejecutar(entrada, clave);
+    const { claves } = await resolver(almacenBlobs(), { id: String(entrada.uid), rol: entrada.rol });
+    if (!claves.length) throw new Error("La cuenta no tiene clave de IA configurada.");
+    const resultado = await ejecutar(entrada, claves);
     await blobs.setJSON(`out/${job}`, { estado: "listo", resultado });
   } catch (err) {
     await blobs.setJSON(`out/${job}`, { estado: "error", error: String((err as Error)?.message ?? err).slice(0, 300) });

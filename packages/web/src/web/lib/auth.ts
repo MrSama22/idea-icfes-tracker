@@ -91,9 +91,9 @@ export const auth = {
       "/api/admin/usuarios",
     ),
   claveTemporal: (email: string) => pedir<{ email: string; clave: string }>("/api/admin/clave", { email }),
-  estadoClaveIA: () => pedir<{ propia: boolean; servidor: boolean }>("/api/auth/clave-ia"),
+  estadoClaveIA: () => pedir<{ propia: boolean; claves?: number; servidor: boolean }>("/api/auth/clave-ia"),
   guardarClaveIA: (clave: string) =>
-    pedir<{ ok: boolean; propia: boolean; servidor: boolean }>("/api/auth/clave-ia", { clave }, "PUT"),
+    pedir<{ ok: boolean; propia: boolean; claves?: number; servidor: boolean }>("/api/auth/clave-ia", { clave }, "PUT"),
   borrarClaveIA: () =>
     pedir<{ ok: boolean; propia: boolean; servidor: boolean }>("/api/auth/clave-ia", undefined, "DELETE"),
 };

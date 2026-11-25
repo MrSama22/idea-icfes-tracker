@@ -6,13 +6,13 @@ import { getStore } from "@netlify/blobs";
 import type { Config, Context } from "@netlify/functions";
 import { almacenBlobs } from "../shared/almacen-blobs.ts";
 import { sesionDe } from "../shared/auth.ts";
-import { claveServidor, leerClave, resolver } from "../shared/claves.ts";
+import { claveServidor, leerClaves, resolver } from "../shared/claves.ts";
 
 const LIMITE_DIARIO = 1500; // freno simple contra abuso
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 const SIN_CLAVE =
-  "Añade tu clave de IA en «Mis cartillas» (OpenAI, OpenRouter o una gratis de Google AI Studio) para poder subir cartillas.";
+  "Añade tu clave de IA en «Mis cartillas» (una gratis de Gemini, Groq, OpenRouter o Mistral; también vale una de OpenAI con saldo) para poder subir cartillas.";
 
 export default async (req: Request, context: Context) => {
   const job = String(context.params.job ?? "");
@@ -20,9 +20,9 @@ export default async (req: Request, context: Context) => {
   const usuario = await sesionDe(almacen, req);
 
   if (job === "estado") {
-    const propia = usuario ? Boolean(await leerClave(almacen, usuario.id)) : false;
+    const claves = usuario ? (await leerClaves(almacen, usuario.id)).length : 0;
     const servidor = Boolean(usuario?.rol === "admin" && claveServidor());
-    return json({ configurada: claveServidor(), propia, servidor, puede: propia || servidor });
+    return json({ configurada: claveServidor(), propia: claves > 0, claves, servidor, puede: claves > 0 || servidor });
   }
 
   if (!/^[a-zA-Z0-9_-]{10,64}$/.test(job)) return json({ error: "Trabajo inválido" }, 400);
@@ -49,8 +49,8 @@ export default async (req: Request, context: Context) => {
     return json({ error: "Datos inválidos" }, 400);
   }
 
-  const clave = await resolver(almacen, usuario);
-  if (!clave.clave && !clave.servidor) return json({ error: SIN_CLAVE }, 402);
+  const { claves } = await resolver(almacen, usuario);
+  if (!claves.length) return json({ error: SIN_CLAVE }, 402);
 
   const dia = new Date().toISOString().slice(0, 10);
   const n = Number((await blobs.get(`cupo/${dia}`)) ?? 0);

@@ -17,7 +17,7 @@ import {
   sesionDe,
   verificar,
 } from "./auth.ts";
-import { claveServidor, claveValida, leerClave } from "./claves.ts";
+import { claveServidor, leerClaves, revisarClaves } from "./claves.ts";
 import { correoConfigurado, enviarCodigo } from "./correo.ts";
 import { error, json } from "./respuesta.ts";
 
@@ -103,20 +103,29 @@ export async function manejarAuth(req: Request, accion: string, a: Almacen): Pro
     if (ruta === "GET clave-ia") {
       const u = await sesionDe(a, req);
       if (!u) return json({ propia: false, servidor: false });
-      return json({ propia: Boolean(await leerClave(a, u.id)), servidor: u.rol === "admin" && claveServidor() });
+      const claves = (await leerClaves(a, u.id)).length;
+      return json({ propia: claves > 0, claves, servidor: u.rol === "admin" && claveServidor() });
     }
 
     if (ruta === "PUT clave-ia") {
       const u = await sesionDe(a, req);
       if (!u) return error("Entra a tu cuenta primero.", 401);
       const d = await cuerpo(req);
-      const clave = texto(d.clave);
-      if (!claveValida(clave))
+      // Se pueden pegar varias claves (una por línea): la app va cambiando de una a otra al agotarse.
+      const { claves, invalidas } = revisarClaves(texto(d.clave));
+      if (!claves.length || invalidas.length)
         return error(
-          "Esa clave no parece válida: debe ser de OpenAI (empieza por sk-), de OpenRouter (empieza por sk-or-) o de Google AI Studio (empieza por AIza o por AQ.).",
+          invalidas.length
+            ? `No reconozco ${invalidas.length === 1 ? "esta clave" : "estas claves"}: ${String(invalidas[0] ?? "").slice(0, 24)}… Usa una de Gemini (AIza… o AQ…), OpenRouter (sk-or-…), Groq (gsk_…), NVIDIA (nvapi-…), OpenAI (sk-…) o escribe \`mistral:tu-clave\`.`
+            : "Pega al menos una clave de IA.",
         );
-      await a.set(`k/${u.id}`, { clave, creado: Date.now() });
-      return json({ ok: true, propia: true, servidor: u.rol === "admin" && claveServidor() });
+      await a.set(`k/${u.id}`, { claves, creado: Date.now() });
+      return json({
+        ok: true,
+        propia: true,
+        claves: claves.length,
+        servidor: u.rol === "admin" && claveServidor(),
+      });
     }
 
     if (ruta === "DELETE clave-ia") {
