@@ -9,10 +9,13 @@ function env(k: string) {
 
 /** ¿El servidor tiene clave propia (la del dueño)? Solo la puede usar el administrador. */
 export const claveServidor = () =>
-  Boolean(env("OPENAI_API_KEY") || env("GEMINI_API_KEY") || env("AI_GATEWAY_API_KEY"));
+  Boolean(
+    env("OPENAI_API_KEY") || env("GEMINI_API_KEY") || env("OPENROUTER_API_KEY") || env("AI_GATEWAY_API_KEY"),
+  );
 
-// OpenAI (sk-...) o Google AI Studio (AIza... o AQ..., con nivel gratuito).
-const FORMATO = /^(sk-[A-Za-z0-9_-]{20,}|AIza[A-Za-z0-9_-]{20,}|AQ\.[A-Za-z0-9_.-]{20,})$/;
+// OpenAI (sk-...), OpenRouter (sk-or-..., con modelos gratuitos) o Google AI Studio (AIza... o AQ...).
+// sk-or- va primero porque también empieza por sk-.
+const FORMATO = /^(sk-or-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{20,}|AIza[A-Za-z0-9_-]{20,}|AQ\.[A-Za-z0-9_.-]{20,})$/;
 export const claveValida = (clave: string) => FORMATO.test(String(clave ?? "").trim());
 
 export async function leerClave(a: Almacen, uid: string): Promise<string | null> {
@@ -25,7 +28,7 @@ export async function resolver(a: Almacen, u: { id: string; rol: Rol }): Promise
   const propia = await leerClave(a, u.id);
   if (propia) return { clave: propia, servidor: false };
   if (u.rol === "admin") {
-    const k = env("OPENAI_API_KEY") ?? env("GEMINI_API_KEY");
+    const k = env("OPENAI_API_KEY") ?? env("GEMINI_API_KEY") ?? env("OPENROUTER_API_KEY");
     if (k) return { clave: k, servidor: true };
     if (env("AI_GATEWAY_API_KEY")) return { clave: null, servidor: true };
   }

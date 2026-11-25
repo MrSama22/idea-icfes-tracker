@@ -113,7 +113,7 @@ export async function manejarAuth(req: Request, accion: string, a: Almacen): Pro
       const clave = texto(d.clave);
       if (!claveValida(clave))
         return error(
-          "Esa clave no parece válida: debe ser de OpenAI (empieza por sk-) o de Google AI Studio (empieza por AIza o por AQ.).",
+          "Esa clave no parece válida: debe ser de OpenAI (empieza por sk-), de OpenRouter (empieza por sk-or-) o de Google AI Studio (empieza por AIza o por AQ.).",
         );
       await a.set(`k/${u.id}`, { clave, creado: Date.now() });
       return json({ ok: true, propia: true, servidor: u.rol === "admin" && claveServidor() });

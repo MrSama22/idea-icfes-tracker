@@ -7,6 +7,7 @@ const M_EXTRAER = "google/gemini-3.1-pro-preview";
 const M_EXPLICAR = "anthropic/claude-sonnet-5";
 const M_OPENAI = "gpt-4.1-mini"; // modelo económico con visión
 const M_GOOGLE = "gemini-3.5-flash-lite"; // modelo del nivel gratuito de Google AI Studio
+const M_OPENROUTER = "nvidia/nemotron-3.5-super-vl:free"; // modelo gratis con visión de OpenRouter
 // Modelos gratuitos de respaldo: el nivel gratuito cambia por proyecto y algunos modelos
 // no se pueden usar para generar contenido, así que se prueban en este orden.
 const GOOGLE_ALTERNOS = [
@@ -16,6 +17,15 @@ const GOOGLE_ALTERNOS = [
   "gemini-3.8-flash",
   "gemini-3.7-flash",
 ];
+// OpenRouter retira y renombra sus modelos «:free» muy seguido, así que también se prueban
+// en orden: si uno ya no existe (404) o no acepta imágenes, se salta al siguiente.
+const OPENROUTER_ALTERNOS = [
+  "google/gemma-4-31b-it:free",
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "inclusionai/ling-3.2-flash:free",
+  "particle-ai/particle-1:free",
+  "openrouter/free",
+];
 
 function env(k: string) {
   return (globalThis as any).Netlify?.env.get(k) ?? process.env[k];
@@ -23,46 +33,67 @@ function env(k: string) {
 
 /** ¿Está configurada la IA? Sin clave, las cartillas no se pueden leer. */
 export const iaConfigurada = () =>
-  Boolean(env("AI_GATEWAY_API_KEY") || env("OPENAI_API_KEY") || env("GEMINI_API_KEY"));
+  Boolean(
+    env("AI_GATEWAY_API_KEY") || env("OPENAI_API_KEY") || env("GEMINI_API_KEY") || env("OPENROUTER_API_KEY"),
+  );
 
 type Papel = "extraer" | "explicar";
-type Proveedor = "openai" | "google";
+type Proveedor = "openai" | "google" | "openrouter";
 
 /**
- * El proveedor sale de la propia clave: las de Google AI Studio empiezan por AIza
- * (formato viejo) o por AQ. (formato nuevo que entrega AI Studio desde 2026).
+ * El proveedor sale de la propia clave, sin configuración extra:
+ * OpenAI empieza por sk-, OpenRouter por sk-or- (modelos «:free») y Google AI Studio por
+ * AIza (formato viejo) o AQ. (el que entrega AI Studio desde 2026).
+ * sk-or- se mira primero porque también empieza por sk-.
  */
 function proveedor(clave?: string | null): Proveedor {
   const t = String(clave ?? "").trim();
+  if (t.startsWith("sk-or-")) return "openrouter";
   return t.startsWith("AIza") || t.startsWith("AQ.") ? "google" : "openai";
 }
 
-const NOMBRE: Record<Proveedor, string> = { openai: "OpenAI", google: "Gemini" };
+const NOMBRE: Record<Proveedor, string> = { openai: "OpenAI", google: "Gemini", openrouter: "OpenRouter" };
 
 const BASE: Record<Proveedor, string> = {
   openai: "https://api.openai.com/v1",
   google: "https://generativelanguage.googleapis.com/v1beta",
+  openrouter: "https://openrouter.ai/api/v1",
 };
 
-/** Modelo según el proveedor real de la llamada: el Gateway usa ids con proveedor; OpenAI y Gemini los suyos. */
+/** Modelo por defecto de cada proveedor (los del Gateway se llaman distinto). */
+const POR_DEFECTO: Record<Proveedor, string> = {
+  openai: M_OPENAI,
+  google: M_GOOGLE,
+  openrouter: M_OPENROUTER,
+};
+
+/** Modelo según el proveedor real de la llamada: el Gateway usa ids con proveedor; los demás, los suyos. */
 function modelo(papel: Papel, prov: Proveedor = "openai", viaGateway = false) {
   if (viaGateway) return papel === "extraer" ? M_EXTRAER : M_EXPLICAR;
-  return modeloPropio(papel) || (prov === "google" ? M_GOOGLE : M_OPENAI);
+  return modeloPropio(papel) || POR_DEFECTO[prov];
 }
 
 const modeloPropio = (papel: Papel) =>
   String(env(papel === "extraer" ? "MODELO_EXTRAER" : "MODELO_EXPLICAR") ?? "").trim();
 
-/** Lista de modelos de Google a probar: el forzado por entorno o los gratuitos en orden. */
-function modelosGoogle(papel: Papel): string[] {
+/** Lista de modelos a probar: el forzado por entorno o los gratuitos del proveedor, en orden. */
+function modelosDe(papel: Papel, prov: Proveedor): string[] {
   const propio = modeloPropio(papel);
   if (propio) return [propio];
-  return [M_GOOGLE, ...GOOGLE_ALTERNOS].filter((m, i, todos) => todos.indexOf(m) === i);
+  const lista =
+    prov === "google"
+      ? [M_GOOGLE, ...GOOGLE_ALTERNOS]
+      : prov === "openrouter"
+        ? [M_OPENROUTER, ...OPENROUTER_ALTERNOS]
+        : [POR_DEFECTO[prov]];
+  return lista.filter((m, i, todos) => todos.indexOf(m) === i);
 }
 
-/** Errores de Google que "no sirven para generar contenido": hay que pasar a otro modelo. */
+/** Errores que dicen "ese modelo no está o no sirve para generar contenido": hay que pasar a otro. */
 const modeloNoSirve = (t: string) =>
-  /\b404\b|not found|not supported for generateContent|is not supported|unsupported model|does not support/i.test(t);
+  /\b404\b|not found|no endpoints|not a valid model|not supported for generateContent|is not supported|unsupported model|does not support/i.test(
+    t,
+  );
 
 /** Traduce los fallos típicos de Google a algo accionable desde la app. */
 function pistaGoogle(mensaje: string) {
@@ -77,6 +108,24 @@ function pistaGoogle(mensaje: string) {
     return " La clave no es válida: cópiala de nuevo desde aistudio.google.com/apikey.";
   if (t.includes("permission_denied"))
     return " El proyecto de esa clave no tiene permiso para usar la API de Gemini.";
+  return "";
+}
+
+/** Traduce los fallos típicos de OpenRouter (nivel gratuito) a algo accionable. */
+function pistaOpenRouter(mensaje: string) {
+  const t = mensaje.toLowerCase();
+  if (t.includes("no endpoints found") || t.includes("not a valid model"))
+    return " Ese modelo gratuito ya no existe en OpenRouter: se prueba el siguiente de la lista.";
+  if (t.includes("free-models-per-day") || t.includes("free_model_daily") || t.includes("free model") )
+    return " Llegaste al tope del nivel gratuito de OpenRouter (20 peticiones por minuto y 50 al día): espera o usa otra clave.";
+  if (t.includes("rate limit") || /\b429\b/.test(t))
+    return " Demasiadas peticiones en poco tiempo: espera un momento o usa otra clave.";
+  if (t.includes("insufficient credit") || /\b402\b/.test(t))
+    return " Tu cuenta de OpenRouter no tiene saldo. Los modelos «:free» no lo necesitan: revisa que el modelo termine en «:free».";
+  if (t.includes("user not found"))
+    return " OpenRouter no reconoce esa clave: pégala de nuevo desde openrouter.ai/keys (empieza por sk-or-).";
+  if (t.includes("no auth") || t.includes("invalid api key") || /\b401\b/.test(t))
+    return " La clave no es válida: cópiala de nuevo desde openrouter.ai/keys (empieza por sk-or-).";
   return "";
 }
 
@@ -127,9 +176,15 @@ async function geminiJSON(model: string, content: any[], system: string, key: st
   return recoger(text);
 }
 
-/** Llamada directa a OpenAI (Chat Completions) con texto e imágenes. */
-async function chatJSON(model: string, content: any[], system: string, key: string) {
-  const base = String(env("OPENAI_BASE_URL") ?? BASE.openai).replace(/\/+$/, "");
+/**
+ * Llamada directa a OpenAI y a OpenRouter: los dos usan el formato Chat Completions,
+ * así que solo cambian la base, las cabeceras y el nombre del límite de tokens.
+ */
+async function chatJSON(prov: "openai" | "openrouter", model: string, content: any[], system: string, key: string) {
+  const base = String(env(prov === "openrouter" ? "OPENROUTER_BASE_URL" : "OPENAI_BASE_URL") ?? BASE[prov]).replace(
+    /\/+$/,
+    "",
+  );
   const partes = content.map((p: any) =>
     p.type === "image"
       ? {
@@ -138,16 +193,25 @@ async function chatJSON(model: string, content: any[], system: string, key: stri
         }
       : { type: "text", text: String(p.text ?? "") },
   );
+  const cabeceras: Record<string, string> = {
+    "content-type": "application/json",
+    authorization: `Bearer ${key}`,
+  };
+  // OpenRouter pide identificar la app que hace las peticiones (es opcional, pero recomendado).
+  if (prov === "openrouter") {
+    cabeceras["HTTP-Referer"] = String(env("APP_URL") ?? "https://idea-icfes-tracker.netlify.app");
+    cabeceras["X-Title"] = "IDEA · ICFES Error Tracker";
+  }
   const r = await fetch(`${base}/chat/completions`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+    headers: cabeceras,
     body: JSON.stringify({
       model,
       messages: [
         { role: "system", content: system },
         { role: "user", content: partes },
       ],
-      max_completion_tokens: 32000,
+      ...(prov === "openrouter" ? { max_tokens: 16000 } : { max_completion_tokens: 32000 }),
     }),
   });
   const cuerpo = await r.text();
@@ -156,26 +220,32 @@ async function chatJSON(model: string, content: any[], system: string, key: stri
     try {
       m = JSON.parse(cuerpo)?.error?.message ?? cuerpo;
     } catch {}
-    throw new Error(`${NOMBRE.openai} ${r.status}: ${String(m).slice(0, 240)}`);
+    const texto = String(m);
+    const pista = prov === "openrouter" ? pistaOpenRouter(texto) : "";
+    throw new Error(`${NOMBRE[prov]} ${r.status}: ${texto.slice(0, 240)}${pista}`);
   }
   const data = JSON.parse(cuerpo);
   return recoger(data?.choices?.[0]?.message?.content ?? "");
 }
 
 async function askJSON(papel: Papel, content: any[], system: string, clave?: string | null, tries = 3) {
-  // Con la clave propia de una cuenta se va a su proveedor (OpenAI o Google); el gateway es solo del servidor.
+  // Con la clave propia de una cuenta se va a su proveedor (OpenAI, Google u OpenRouter);
+  // el gateway es solo del servidor.
   const viaGateway = !clave && Boolean(env("AI_GATEWAY_API_KEY"));
   const gw = viaGateway
     ? createGateway({ baseURL: env("AI_GATEWAY_BASE_URL"), apiKey: env("AI_GATEWAY_API_KEY") })
     : null;
-  const usada = clave ?? env("OPENAI_API_KEY") ?? env("GEMINI_API_KEY") ?? null;
+  const usada =
+    clave ?? env("OPENAI_API_KEY") ?? env("GEMINI_API_KEY") ?? env("OPENROUTER_API_KEY") ?? null;
   const prov = proveedor(usada);
-  // Con clave de Google se prueban varios modelos gratuitos: si uno no existe o no genera
-  // contenido, se pasa al siguiente sin molestar a la cuenta.
-  const modelos = prov === "google" && !viaGateway ? modelosGoogle(papel) : [modelo(papel, prov, viaGateway)];
+  // Con clave gratuita (Google u OpenRouter) se prueban varios modelos: si uno no existe
+  // o no genera contenido, se pasa al siguiente sin molestar a la cuenta.
+  const modelos = viaGateway ? [modelo(papel, prov, true)] : modelosDe(papel, prov);
+  // Con claves gratuitas el tope es de cuota: se le da más margen antes de rendirse.
+  const intentos = prov === "google" ? Math.max(tries, 4) : tries;
   let last: unknown;
   for (const model of modelos) {
-    for (let i = 0; i < tries; i++) {
+    for (let i = 0; i < intentos; i++) {
       try {
         if (gw) {
           const { text } = await generateText({
@@ -191,17 +261,30 @@ async function askJSON(papel: Papel, content: any[], system: string, clave?: str
         if (!usada) throw new Error("Esta cuenta no tiene clave de IA configurada.");
         return prov === "google"
           ? await geminiJSON(model, content, system, usada)
-          : await chatJSON(model, content, system, usada);
+          : await chatJSON(prov, model, content, system, usada);
       } catch (e) {
         last = e;
         const t = String((e as Error)?.message ?? e);
         // La clave no sirve o no hay saldo: reintentar (o cambiar de modelo) no arregla nada.
-        if (/401|403|invalid_api_key|API key not valid|insufficient_quota|no credits remaining|billing/i.test(t)) throw e;
+        // Ojo: el error de cuota de Gemini dice "check your plan and billing details", así que
+        // "billing" no puede contar como fallo definitivo (se quedaría sin reintentar).
+        if (
+          /401|403|invalid_api_key|API key not valid|insufficient_quota|credit_balance_exhausted|no credits remaining/i.test(t)
+        )
+          throw e;
         // Ese modelo no está disponible en el proyecto o no sirve para generar contenido.
         if (modeloNoSirve(t)) break;
+        // El nivel gratuito de OpenRouter es un tope diario: reintentar solo gasta cupo.
+        if (prov === "openrouter" && /429|RESOURCE_EXHAUSTED|rate limit/i.test(t)) throw e;
         // En el nivel gratuito de Google los límites son por minuto: vale la pena esperar y reintentar.
         if (prov === "google" && /429|RESOURCE_EXHAUSTED|rate limit/i.test(t)) {
-          await new Promise((listo) => setTimeout(listo, 2500 * (i + 1)));
+          // Google dice en el error cuántos segundos faltan ("Please retry in 34.5s"): se respeta.
+          const sugiere = Number(t.match(/retry in ([\d.]+)s/i)?.[1] ?? 0);
+          // El azar evita que las 4 páginas en paralelo vuelvan a chocar a la vez.
+          const ms =
+            (sugiere ? Math.min(sugiere * 1000 + 800, 45_000) : Math.min(15_000 * (i + 1), 45_000)) +
+            Math.floor(Math.random() * 3000);
+          await new Promise((listo) => setTimeout(listo, ms));
         } else if (/503|UNAVAILABLE|high demand|overloaded/i.test(t)) {
           // Saturación puntual del modelo: se espera un poco antes de reintentar.
           await new Promise((listo) => setTimeout(listo, 1500 * (i + 1)));

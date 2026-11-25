@@ -11,7 +11,8 @@ import { claveServidor, leerClave, resolver } from "../shared/claves.ts";
 const LIMITE_DIARIO = 1500; // freno simple contra abuso
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
-const SIN_CLAVE = "Añade tu clave de OpenAI en «Mis cartillas» para poder subir cartillas.";
+const SIN_CLAVE =
+  "Añade tu clave de IA en «Mis cartillas» (OpenAI, OpenRouter o una gratis de Google AI Studio) para poder subir cartillas.";
 
 export default async (req: Request, context: Context) => {
   const job = String(context.params.job ?? "");

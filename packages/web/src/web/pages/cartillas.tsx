@@ -106,7 +106,7 @@ export default function CartillasPage() {
             <>
               <b>Te falta tu clave de IA.</b> Cada cuenta usa su propia clave para leer las cartillas (la del servidor no se
               comparte), así que todavía no puedes subir. Agrégala aquí abajo, en «Tu clave de IA»: vale una de OpenAI o
-              una gratis de Google AI Studio.
+              una gratis de Google AI Studio o una de OpenRouter (empieza por sk-or- y tiene modelos :free).
             </>
           ) : (
             <>
@@ -341,7 +341,7 @@ export default function CartillasPage() {
   );
 }
 
-/** Cada cuenta normal guarda su propia clave de IA (OpenAI o Google); el admin puede usar la del servidor. */
+/** Cada cuenta normal guarda su propia clave de IA (OpenAI, Google u OpenRouter); el admin puede usar la del servidor. */
 function ClaveIA({
   ia,
   recargar,
@@ -406,7 +406,9 @@ function ClaveIA({
         Cada cuenta usa su propia clave para leer las cartillas; la del servidor no se comparte. Se guarda en tu cuenta
         (no en este navegador) y no se vuelve a mostrar. Sirve una de OpenAI ({" "}
         <span className="font-mono text-[12px]">platform.openai.com/api-keys</span>) o, si te quedaste sin saldo, una
-        gratis de Google AI Studio (<span className="font-mono text-[12px]">aistudio.google.com/apikey</span>).
+        gratis de Google AI Studio (<span className="font-mono text-[12px]">aistudio.google.com/apikey</span>) o una de
+        OpenRouter, que también tiene modelos gratuitos (<span className="font-mono text-[12px]">openrouter.ai/keys</span>)
+        y empieza por <span className="font-mono text-[12px]">sk-or-</span>.
       </p>
       {ia?.propia ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -427,7 +429,7 @@ function ClaveIA({
             type="password"
             value={valor}
             onChange={(e) => setValor(e.target.value)}
-            placeholder="sk-... o AQ..."
+            placeholder="sk-..., AQ... o sk-or-..."
             autoComplete="off"
             className="h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-sm outline-none focus:border-foreground"
           />

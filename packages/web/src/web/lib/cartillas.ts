@@ -152,7 +152,14 @@ export function useAviso() {
 function mensajeFallo(fallos: string[], total: number) {
   const todo = fallos.join(" ").toLowerCase();
   if (todo.includes("openai_api_key") || todo.includes("ai_gateway_api_key") || todo.includes("falta openai")) {
-    return "La lectura con IA no está configurada en el servidor (falta GEMINI_API_KEY u OPENAI_API_KEY), así que no se pudieron leer las páginas.";
+    return "La lectura con IA no está configurada en el servidor (falta GEMINI_API_KEY, OPENROUTER_API_KEY u OPENAI_API_KEY), así que no se pudieron leer las páginas.";
+  }
+  if (todo.includes("openrouter") && (todo.includes("429") || todo.includes("rate limit") || todo.includes("free-model"))) {
+    return "OpenRouter llegó a su tope gratuito (20 peticiones por minuto y 50 al día). Espera un poco o pon otra clave.";
+  }
+  // Gemini gratis se queda sin cuota por minuto o por día; eso NO es falta de saldo.
+  if (todo.includes("gemini") && (todo.includes("429") || todo.includes("resource_exhausted") || todo.includes("quota"))) {
+    return "Gemini gratis alcanzó su tope de cuota (tiene un límite por minuto y otro por día), así que no se pudieron leer las páginas. Nada se perdió: espera un minuto y pulsa «Reintentar». Si la cartilla tiene muchas páginas, ve subiéndola por partes o usa una clave de OpenRouter (sk-or-…) o de OpenAI con saldo.";
   }
   if (todo.includes("insufficient_quota") || todo.includes("exceeded your current quota") || todo.includes("no credits remaining")) {
     return "La cuenta de IA se quedó sin saldo, así que no se pudieron leer las páginas. Añade créditos a la API o usa otra clave.";
