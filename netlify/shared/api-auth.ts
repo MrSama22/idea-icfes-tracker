@@ -116,7 +116,7 @@ export async function manejarAuth(req: Request, accion: string, a: Almacen): Pro
       if (!claves.length || invalidas.length)
         return error(
           invalidas.length
-            ? `No reconozco ${invalidas.length === 1 ? "esta clave" : "estas claves"}: ${String(invalidas[0] ?? "").slice(0, 24)}… Usa una de Gemini (AIza… o AQ…), OpenRouter (sk-or-…), Groq (gsk_…), NVIDIA (nvapi-…), OpenAI (sk-…) o escribe \`mistral:tu-clave\`.`
+            ? `No reconozco ${invalidas.length === 1 ? "esta clave" : "estas claves"}: ${String(invalidas[0] ?? "").slice(0, 24)}… Usa una de Gemini (AIza… o AQ…), OpenRouter (sk-or-…), Groq (gsk_…), Mistral (mstrl_… o \`mistral:…\`), NVIDIA (nvapi-…), OpenAI (sk-…).`
             : "Pega al menos una clave de IA.",
         );
       await a.set(`k/${u.id}`, { claves, creado: Date.now() });

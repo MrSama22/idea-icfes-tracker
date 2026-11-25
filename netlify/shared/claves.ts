@@ -12,6 +12,7 @@ function env(k: string) {
 const PREFIJOS: RegExp[] = [
   /^sk-or-[A-Za-z0-9_-]{16,}$/, // OpenRouter
   /^gsk_[A-Za-z0-9_-]{16,}$/, // Groq
+  /^mstrl_[A-Za-z0-9_-]{16,}$/, // Mistral
   /^nvapi-[A-Za-z0-9_-]{16,}$/, // NVIDIA NIM
   /^csk-[A-Za-z0-9_-]{16,}$/, // Cerebras
   /^AIza[A-Za-z0-9_-]{20,}$/, // Google AI Studio (formato viejo)
@@ -19,7 +20,7 @@ const PREFIJOS: RegExp[] = [
   /^sk-[A-Za-z0-9_-]{20,}$/, // OpenAI
 ];
 
-/** «proveedor:clave»: hace falta para los que no tienen prefijo propio (Mistral, por ejemplo). */
+/** «proveedor:clave»: se puede usar con cualquiera, y hace falta si la clave no trae prefijo propio. */
 const CON_PROVEEDOR = /^(openai|google|gemini|openrouter|groq|mistral|nvidia|cerebras):/i;
 const PROVEEDORES = ["openai", "google", "gemini", "openrouter", "groq", "mistral", "nvidia", "cerebras"];
 

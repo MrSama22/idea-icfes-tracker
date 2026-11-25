@@ -51,9 +51,9 @@ type Proveedor = "openai" | "google" | "openrouter" | "groq" | "mistral" | "nvid
 /**
  * El proveedor sale de la propia clave, sin configuración extra:
  * OpenAI empieza por sk-, OpenRouter por sk-or- (modelos «:free»), Google AI Studio por
- * AIza o AQ., Groq por gsk_, NVIDIA por nvapi- y Cerebras por csk-.
- * sk-or- se mira primero porque también empieza por sk-. Los proveedores sin prefijo propio
- * (Mistral) se guardan como «mistral:la-clave».
+ * AIza o AQ., Groq por gsk_, Mistral por mstrl_, NVIDIA por nvapi- y Cerebras por csk-.
+ * sk-or- se mira primero porque también empieza por sk-. Una clave de Mistral sin prefijo
+ * propio se puede guardar como «mistral:la-clave».
  */
 function proveedor(clave?: string | null): Proveedor {
   const t = String(clave ?? "").trim();
@@ -63,6 +63,7 @@ function proveedor(clave?: string | null): Proveedor {
   if (escrito) return (escrito === "gemini" ? "google" : escrito) as Proveedor;
   if (t.startsWith("sk-or-")) return "openrouter";
   if (t.startsWith("gsk_")) return "groq";
+  if (t.startsWith("mstrl_")) return "mistral";
   if (t.startsWith("nvapi-")) return "nvidia";
   if (t.startsWith("csk-")) return "cerebras";
   return t.startsWith("AIza") || t.startsWith("AQ.") ? "google" : "openai";
@@ -345,6 +346,7 @@ async function askJSON(
     }
     const intentos = prov === "google" ? Math.max(tries, 3) : tries;
     let cortar = false; // esta clave ya no da más: siguiente
+    let sinCupo = 0; // modelos de esta clave que ya respondieron «sin cupo»
     for (const model of modelosDe(papel, prov)) {
       if (cortar) break;
       for (let i = 0; i < intentos; i++) {
@@ -366,7 +368,11 @@ async function askJSON(
               await esperar(ms);
               continue;
             }
+            // El tope puede ser del modelo y no de la cuenta (cada modelo gratis tiene el suyo),
+            // así que antes de dar la clave por agotada se prueba otro modelo del proveedor.
+            sinCupo++;
             fallos.push(`${NOMBRE[prov]} sin cupo`);
+            if (sinCupo < 3) break; // siguiente modelo de esta misma clave
             cortar = true;
             break;
           }

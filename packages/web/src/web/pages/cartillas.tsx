@@ -397,7 +397,7 @@ function ClaveIA({
       <p className="mt-1 text-sm text-muted-foreground">
         Cada cuenta usa sus propias claves para leer las cartillas; las del servidor no se comparten. Se guardan en tu
         cuenta (no en este navegador) y no se vuelven a mostrar. <b>Pega varias, una por línea</b>: cuando una llega a su
-        tope gratuito, la app pasa sola a la siguiente. Ningún servicio de IA es gratis sin ningún tope; lo que hace la
+        tope gratuito, la app pasa sola a la siguiente; si lo que se agota es el modelo, prueba antes otro modelo gratis del mismo servicio. Ningún servicio de IA es gratis sin ningún tope; lo que hace la
         app es repartir el trabajo entre todos los que tengas.
       </p>
       <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
@@ -418,8 +418,9 @@ function ClaveIA({
         </li>
         <li>
           · <b>Mistral</b> (gratis, lee figuras):{" "}
-          <span className="font-mono text-[12px]">console.mistral.ai/api-keys</span> → pégala como{" "}
-          <span className="font-mono text-[12px]">mistral:tu-clave</span>
+          <span className="font-mono text-[12px]">console.mistral.ai/api-keys</span> → empieza por{" "}
+          <span className="font-mono text-[12px]">mstrl_</span> (si la tuya no lo trae, pégala como{" "}
+          <span className="font-mono text-[12px]">mistral:tu-clave</span>)
         </li>
         <li>
           · <b>NVIDIA</b> (gratis para probar, lee figuras):{" "}
@@ -460,7 +461,7 @@ function ClaveIA({
             value={valor}
             onChange={(e) => setValor(e.target.value)}
             rows={3}
-            placeholder={"Una clave por línea (o separadas por comas):\nAQ…\nsk-or-…\ngsk_…\nmistral:…"}
+            placeholder={"Una clave por línea (o separadas por comas):\nAQ…\nsk-or-…\ngsk_…\nmstrl_…\nnvapi-…"}
             autoComplete="off"
             spellCheck={false}
             className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-foreground"
