@@ -112,9 +112,8 @@ export default function CartillasPage() {
             <>
               <b>La IA no está configurada.</b> Falta <code className="font-mono text-[12px]">OPENAI_API_KEY</code>,{" "}
               <code className="font-mono text-[12px]">GEMINI_API_KEY</code> o{" "}
-              <code className="font-mono text-[12px]">AI_GATEWAY_API_KEY</code> en este servidor, así que todavía no se
-              pueden leer cartillas. Añádela en <code className="font-mono text-[12px]">.env</code> (o en Netlify →
-              Environment variables) y recarga la página.
+              <code className="font-mono text-[12px]">OPENROUTER_API_KEY</code> en este servidor, así que todavía no se
+              pueden leer cartillas. También puedes poner tu clave aquí abajo, en «Tu clave de IA», sin tocar el servidor.
             </>
           )}
         </div>
