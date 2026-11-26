@@ -132,14 +132,36 @@ export const cartillas = {
     await guardar(n);
     void subir(n);
   },
-  async eliminar(id: string) {
+  /**
+   * Borra una cartilla de mi cuenta. Si estaba compartida con todas las cuentas, `tambienGlobal`
+   * decide si desaparece para todos o solo de mi lista (entonces sigue en «Cartillas globales»).
+   */
+  async eliminar(id: string, tambienGlobal = false) {
     const c = lista.find((x) => x.id === id);
     lista = lista.filter((x) => x.id !== id);
     avisar();
     await idb.del("cartillas", id);
     await idb.delPrefijo("paginas", `${id}:`);
-    if (auth.get().cuenta)
-      await fetch(`/api/${c?.global ? "global" : "cartillas"}/${id}`, { method: "DELETE" }).catch(() => {});
+    if (auth.get().cuenta) {
+      if (c?.global && tambienGlobal) await fetch(`/api/global/${id}`, { method: "DELETE" }).catch(() => {});
+      // Una cartilla publicada solo vive en la nube de las globales; si no, su copia es la de mi cuenta.
+      if (!c?.global || tambienGlobal) await fetch(`/api/cartillas/${id}`, { method: "DELETE" }).catch(() => {});
+      if (c?.global) await cargarGlobales();
+    }
+  },
+  /** Solo administrador: borra una cartilla global para todas las cuentas. */
+  async eliminarGlobal(id: string) {
+    globales = globales.filter((x) => x.id !== id);
+    avisar();
+    if (auth.get().cuenta) await fetch(`/api/global/${id}`, { method: "DELETE" }).catch(() => {});
+    // Si la global también estaba en mi cuenta, no se pierde el trabajo: queda como cartilla privada.
+    const mia = lista.find((x) => x.id === id);
+    if (mia) {
+      const privada: Cartilla = { ...mia, global: undefined, sincronizada: false };
+      await guardar(privada);
+      void subir(privada);
+    }
+    await cargarGlobales();
   },
   async reintentar(id: string) {
     const c = lista.find((x) => x.id === id);

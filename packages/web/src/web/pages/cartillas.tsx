@@ -48,6 +48,7 @@ export default function CartillasPage() {
   const [paso, setPaso] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [arrastrando, setArrastrando] = useState(false);
+  const [borrarGlobal, setBorrarGlobal] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
   const agregar = (fs: FileList | File[] | null) => {
@@ -316,7 +317,7 @@ export default function CartillasPage() {
             Cartillas globales
           </SectionTitle>
           <p className="mb-3 text-sm text-muted-foreground">
-            Las publicó el administrador. Se practican igual que las tuyas y no las puedes editar.
+            Las publicó el administrador. Se practican igual que las tuyas. Solo él puede quitarlas.
           </p>
           <ul className="space-y-3">
             {globales.map((c) => (
@@ -336,6 +337,33 @@ export default function CartillasPage() {
                   >
                     <Play className="size-3.5 fill-current" /> Practicar
                   </button>
+                  {cuenta?.rol === "admin" &&
+                    (borrarGlobal === c.id ? (
+                      <span className="flex w-full flex-wrap items-center gap-2 text-sm">
+                        <span className="w-full text-muted-foreground">
+                          ¿Borrarla para todas las cuentas? Desaparece de la lista de todos.
+                        </span>
+                        <button
+                          onClick={() => {
+                            setBorrarGlobal(null);
+                            void cartillas.eliminarGlobal(c.id);
+                          }}
+                          className="inline-flex h-10 items-center rounded-md bg-accent px-3 font-semibold text-accent-foreground"
+                        >
+                          Sí, borrar para todos
+                        </button>
+                        <button onClick={() => setBorrarGlobal(null)} className="inline-flex h-10 items-center px-2 text-muted-foreground">
+                          No
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setBorrarGlobal(c.id)}
+                        className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border border-border px-3 text-sm text-muted-foreground hover:border-accent hover:text-accent"
+                      >
+                        <Trash2 className="size-3.5" /> Borrar
+                      </button>
+                    ))}
                 </div>
               </li>
             ))}
@@ -626,14 +654,37 @@ function Item({ c, admin, onPracticar }: { c: Cartilla; admin: boolean; onPracti
           </button>
         )}
         {borrar ? (
-          <span className="inline-flex items-center gap-2 text-sm">
-            ¿Borrarla?
-            <button onClick={() => cartillas.eliminar(c.id)} className="h-10 rounded-md bg-accent px-3 font-semibold text-accent-foreground">
-              Sí, borrar
-            </button>
-            <button onClick={() => setBorrar(false)} className="h-10 px-2 text-muted-foreground">
-              No
-            </button>
+          <span className="flex w-full flex-wrap items-center gap-2 text-sm">
+            {admin && c.global ? (
+              <>
+                <span className="w-full text-muted-foreground">
+                  «{c.nombre}» está compartida con todas las cuentas. ¿La borro también para todos? Si eliges «solo la mía»,
+                  seguirá en «Cartillas globales».
+                </span>
+                <button
+                  onClick={() => cartillas.eliminar(c.id, true)}
+                  className="h-10 rounded-md bg-accent px-3 font-semibold text-accent-foreground"
+                >
+                  Sí, también para todos
+                </button>
+                <button onClick={() => cartillas.eliminar(c.id)} className="h-10 rounded-md border border-foreground px-3 font-semibold">
+                  No, solo la mía
+                </button>
+                <button onClick={() => setBorrar(false)} className="h-10 px-2 text-muted-foreground">
+                  Cancelar
+                </button>
+              </>
+            ) : (
+              <>
+                ¿Borrarla?
+                <button onClick={() => cartillas.eliminar(c.id)} className="h-10 rounded-md bg-accent px-3 font-semibold text-accent-foreground">
+                  Sí, borrar
+                </button>
+                <button onClick={() => setBorrar(false)} className="h-10 px-2 text-muted-foreground">
+                  No
+                </button>
+              </>
+            )}
           </span>
         ) : (
           <button onClick={() => setBorrar(true)} className="inline-flex h-10 items-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground hover:text-accent">
