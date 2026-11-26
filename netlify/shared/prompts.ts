@@ -18,6 +18,7 @@ export function promptExtraer(nImgs: number, materia: string | null, pagina: num
   return `Te envío ${nImgs} imagen(es): la página ${pagina} de ${total} de una cartilla${materia ? ` de la materia ${materia}` : ""}${nImgs > 1 ? " (imagen 0) y la página siguiente (imagen 1) solo como continuación" : " (imagen 0)"}.
 Transcribe las preguntas de selección múltiple que EMPIEZAN en la imagen 0 (ignora las que vienen de una página anterior y ya empezaron arriba sin su inicio, salvo que su texto común completo esté en la imagen 0). ${nImgs > 1 ? "Si una pregunta o texto empieza en la imagen 0 y continúa en la imagen 1, complétalo con la imagen 1. No transcribas lo que empieza en la imagen 1." : ""}
 Agrupa en "unidades": varias preguntas que comparten un texto, tabla o gráfica común forman UNA unidad con ese material en "contexto" (completo). Una pregunta suelta es una unidad con "contexto": null.
+Cada pregunta debe decir su propia materia, aunque la página mezcle varias (por ejemplo, Matemáticas y Lectura en la misma hoja): no mezcles materias dentro de una misma pregunta ni les pongas la materia de otra sección.
 Si la imagen 0 contiene una CLAVE o tabla de respuestas correctas (por ejemplo "1. B, 2. C..."), devuélvela en "claves".
 Formato:
 {
@@ -25,7 +26,7 @@ Formato:
  "unidades": [{
    "contexto": string|null,
    "contexto_figuras": [{"pagina": int, "box_2d": [ymin,xmin,ymax,xmax], "descripcion": string}],
-   "preguntas": [{"n": int, "enunciado": string, "figuras": [...], "opciones": [{"letra": "A", "texto": string, "figuras": [...]}], "marcada": "A"|null}]
+   "preguntas": [{"n": int, "materia": "MAT"|"LEC"|"CIE"|"SOC"|"ING"|null, "enunciado": string, "figuras": [...], "opciones": [{"letra": "A", "texto": string, "figuras": [...]}], "marcada": "A"|null}]
  }],
  "claves": {"<n>": "A", ...} | {}
 }

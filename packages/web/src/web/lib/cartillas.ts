@@ -533,15 +533,25 @@ async function ensamblar(id: string) {
   };
   const figs = async (n: number, xs: any[] | undefined) => (await Promise.all((xs ?? []).map((f) => recortar(n, f)))).filter(Boolean) as Figura[];
 
-  // materia: la elegida o la que más detectó la IA
+  const esMateria = (x: unknown): x is MateriaId => MATERIAS.some((m) => m.id === x);
+
+  // materia: la elegida, la de cada pregunta, o la que más detectó la IA
   const votos = new Map<string, number>();
   for (const p of Object.values(c.paginas)) if (p.r?.materia) votos.set(p.r.materia, (votos.get(p.r.materia) ?? 0) + 1);
   const mayoria = ([...votos].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "LEC") as MateriaId;
 
-  const claves: Record<string, string> = {};
-  for (const p of Object.values(c.paginas)) for (const [k, v] of Object.entries(p.r?.claves ?? {})) if (typeof v === "string") claves[k] = v.trim().toUpperCase().slice(0, 1);
+  const clavesDe = (r: any): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(r?.claves ?? {})) if (typeof v === "string") out[k] = v.trim().toUpperCase().slice(0, 1);
+    return out;
+  };
+  // Tabla de claves suelta (normalmente al final de la cartilla).
+  const clavesSueltas: Record<string, string> = {};
+  for (const p of Object.values(c.paginas)) Object.assign(clavesSueltas, clavesDe(p.r));
 
-  const vistos = new Set<number>();
+  // Se deduplica por pregunta Y materia: una cartilla mixta puede numerar 1..25 en cada materia
+  // y antes la segunda materia se perdía entera por «número repetido».
+  const vistas = new Set<string>();
   // Huellas de las preguntas de ESTA cartilla: si se repiten entre páginas se descartan sin
   // contar como «ya estaban en tu banco» (eso cancelaba subidas de cartillas nuevas).
   const deEsta = new Set<string>();
@@ -550,43 +560,60 @@ async function ensamblar(id: string) {
   for (let n = 1; n <= c.total; n++) {
     const r = c.paginas[n]?.r;
     if (!r?.unidades) continue;
-    const materia = (c.materia ?? (MATERIAS.some((m) => m.id === r.materia) ? r.materia : mayoria)) as MateriaId;
+    const clavesPagina = clavesDe(r);
+    const materiaPagina = (c.materia ?? (esMateria(r.materia) ? r.materia : mayoria)) as MateriaId;
     for (const u of r.unidades) {
-      const qs: Cruda["preguntas"] = [];
-      for (const q of u.preguntas ?? []) {
-        const num = Number(q.n);
-        if (!Number.isFinite(num) || vistos.has(num) || !Array.isArray(q.opciones) || q.opciones.length < 2) continue;
-        vistos.add(num);
-        const huella = norm(String(q.enunciado ?? "") + q.opciones.map((o: any) => String(o.texto ?? "")).join(""));
-        if (huella.length > 40) {
-          // «Repetida» = ya está en el banco o en otra cartilla terminada (no en esta misma).
-          if (conocidas.has(huella)) {
-            repetidas++;
-            continue;
+      // Una unidad con una figura dañada no debe botar el resto de la cartilla.
+      try {
+        const materiaUnidad = (c.materia ?? (esMateria(u.materia) ? u.materia : materiaPagina)) as MateriaId;
+        const porMateria = new Map<MateriaId, Cruda["preguntas"]>();
+        for (const q of u.preguntas ?? []) {
+          const num = Number(q.n);
+          if (!Number.isFinite(num) || !Array.isArray(q.opciones) || q.opciones.length < 2) continue;
+          // La IA marca la materia de cada pregunta; si la cartilla mezcla materias, cada una va a la suya.
+          const materiaQ = (c.materia ?? (esMateria(q.materia) ? q.materia : materiaUnidad)) as MateriaId;
+          const marca = `${materiaQ}:${num}`;
+          if (vistas.has(marca)) continue;
+          vistas.add(marca);
+          const huella = norm(String(q.enunciado ?? "") + q.opciones.map((o: any) => String(o.texto ?? "")).join(""));
+          if (huella.length > 40) {
+            // «Repetida» = ya está en el banco o en otra cartilla terminada (no en esta misma).
+            if (conocidas.has(huella)) {
+              repetidas++;
+              continue;
+            }
+            if (deEsta.has(huella)) continue;
+            deEsta.add(huella);
           }
-          if (deEsta.has(huella)) continue;
-          deEsta.add(huella);
+          const clave =
+            clavesPagina[String(num)] ??
+            clavesSueltas[String(num)] ??
+            (typeof q.marcada === "string" ? q.marcada.toUpperCase().slice(0, 1) : null);
+          const qs = porMateria.get(materiaQ) ?? [];
+          qs.push({
+            n: num,
+            enunciado: String(q.enunciado ?? ""),
+            figuras: await figs(n, q.figuras),
+            opciones: await Promise.all(q.opciones.map(async (o: any) => ({ l: String(o.letra ?? "").toUpperCase().slice(0, 1), t: String(o.texto ?? ""), figuras: await figs(n, o.figuras) }))),
+            clave,
+          });
+          porMateria.set(materiaQ, qs);
         }
-        qs.push({
-          n: num,
-          enunciado: String(q.enunciado ?? ""),
-          figuras: await figs(n, q.figuras),
-          opciones: await Promise.all(q.opciones.map(async (o: any) => ({ l: String(o.letra ?? "").toUpperCase().slice(0, 1), t: String(o.texto ?? ""), figuras: await figs(n, o.figuras) }))),
-          clave: claves[String(num)] ?? (typeof q.marcada === "string" ? q.marcada.toUpperCase().slice(0, 1) : null),
-        });
+        for (const [materiaQ, qs] of porMateria) {
+          if (!qs.length) continue;
+          crudas.push({
+            id: `c${id}-p${n}-${materiaQ}-${qs[0].n}`,
+            materia: materiaQ,
+            contexto: String(u.contexto ?? ""),
+            contextoFiguras: await figs(n, u.contexto_figuras),
+            preguntas: qs,
+          });
+        }
+      } catch {
+        /* seguimos con las demás unidades: lo que sí se leyó se conserva */
       }
-      if (!qs.length) continue;
-      crudas.push({
-        id: `c${id}-${qs[0].n}`,
-        materia,
-        contexto: String(u.contexto ?? ""),
-        contextoFiguras: await figs(n, u.contexto_figuras),
-        preguntas: qs,
-      });
     }
   }
-  // claves que aparecieron en páginas posteriores (p. ej. al final de la cartilla)
-  for (const u of crudas) for (const q of u.preguntas) q.clave = claves[String(q.n)] ?? q.clave;
 
   const cc = actual(id);
   // Solo se cancela si la cartilla NO aporta nada nuevo (todas sus preguntas ya estaban).
@@ -607,7 +634,12 @@ async function ensamblar(id: string) {
   }
   const exp: Cartilla["exp"] = {};
   for (const u of crudas) exp[u.id] = { estado: "pendiente", intentos: 0 };
-  await guardar({ ...cc, crudas, repetidas, exp, fase: "explicando" });
+  // Si alguna página falló, la cartilla sigue con lo que sí se leyó y lo dice claramente.
+  const fallidas = Object.values(cc.paginas).filter((p) => p.estado === "error").length;
+  const aviso = fallidas
+    ? `Se leyeron ${Math.max(0, cc.total - fallidas)} de ${cc.total} páginas. Las ${fallidas} que fallaron no se perdieron: puedes reintentar más tarde sin perder las preguntas que sí quedaron.`
+    : undefined;
+  await guardar({ ...cc, crudas, repetidas, error: aviso, exp, fase: "explicando" });
 }
 
 // ---------- 4) explicar ----------
@@ -695,12 +727,23 @@ async function terminar(id: string) {
       fuente: { id: c.id, nombre: c.nombre },
     });
   }
+  const sinExplicar = Object.values(c.exp).filter((p) => p.estado === "error").length;
+  const notas = [
+    c.error,
+    sinExplicar
+      ? `${sinExplicar} bloque${sinExplicar === 1 ? "" : "s"} de preguntas no se pudo${sinExplicar === 1 ? "" : "ieron"} explicar; las demás quedaron guardadas.`
+      : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const listo: Cartilla = {
     ...c,
     unidades,
     fase: unidades.length ? "listo" : "error",
-    error: unidades.length ? undefined : "No pudimos preparar las preguntas de esta cartilla.",
-    crudas: undefined,
+    error: unidades.length ? notas || undefined : notas || "No pudimos preparar las preguntas de esta cartilla.",
+    // Si no se pudo preparar nada, conservamos lo leído para reintentar solo la explicación
+    // (sin volver a leer ni gastar IA en las páginas).
+    crudas: unidades.length ? undefined : c.crudas,
     paginas: Object.fromEntries(Object.entries(c.paginas).map(([k, p]) => [k, { estado: p.estado, intentos: p.intentos }])) as Cartilla["paginas"],
     exp: Object.fromEntries(Object.entries(c.exp).map(([k, p]) => [k, { estado: p.estado, intentos: p.intentos }])) as Cartilla["exp"],
   };
@@ -757,7 +800,16 @@ export async function cerrarCuenta() {
 async function subir(c: Cartilla): Promise<boolean> {
   if (!auth.get().cuenta || c.fase !== "listo") return false;
   const cuerpo = JSON.stringify({ id: c.id, nombre: c.nombre, materia: c.materia, creado: c.creado, unidades: c.unidades, repetidas: c.repetidas, global: !!c.global });
-  if (cuerpo.length > 5_700_000) return false; // muy grande para la nube: se queda solo en este dispositivo
+  if (cuerpo.length > 5_700_000) {
+    // Muy grande para la nube: se conserva en este dispositivo y se avisa en la lista.
+    const x = lista.find((y) => y.id === c.id);
+    if (x && !x.error)
+      await guardar({
+        ...x,
+        error: "Se guardó en este dispositivo. Es demasiado grande para tu cuenta, así que no se verá en otros equipos.",
+      });
+    return false;
+  }
   const ruta = c.global ? `/api/global/${c.id}` : `/api/cartillas/${c.id}`;
   const r = await fetch(ruta, { method: "PUT", headers: { "content-type": "application/json" }, body: cuerpo }).catch(() => null);
   if (!r?.ok) return false;

@@ -517,7 +517,11 @@ function Barra({ hechas, total, label }: { hechas: number; total: number; label:
 function Item({ c, admin, onPracticar }: { c: Cartilla; admin: boolean; onPracticar: () => void }) {
   const pr = progreso(c);
   const [borrar, setBorrar] = useState(false);
-  const mats = [...new Set(c.unidades.map((u) => u.materia))].map((m) => MATERIAS.find((x) => x.id === m)!);
+  // Materia detectada en cada pregunta (una cartilla puede mezclar varias).
+  const mats = MATERIAS.map((m) => ({
+    m,
+    n: c.unidades.filter((u) => u.materia === m.id).reduce((a, u) => a + u.preguntas.length, 0),
+  })).filter((x) => x.n > 0);
   const ia = c.unidades.some((u) => u.preguntas.some((q) => q.claveIA));
   return (
     <li className={cn("rounded-xl border-2 bg-card p-4", c.fase === "listo" ? "border-foreground" : "border-border")}>
@@ -553,10 +557,13 @@ function Item({ c, admin, onPracticar }: { c: Cartilla; admin: boolean; onPracti
         <>
           <p className="mt-2 text-sm">
             <b data-testid="n-preguntas">{pr.preguntas} preguntas</b>
-            {mats.length > 0 && <span className="text-muted-foreground"> · {mats.map((m) => m.corto).join(", ")}</span>}
+            {mats.length > 0 && (
+              <span className="text-muted-foreground"> · {mats.map((x) => `${x.m.corto} ${x.n}`).join(", ")}</span>
+            )}
           </p>
           {!!c.repetidas && <p className="mt-1 text-xs text-muted-foreground">{c.repetidas} ya estaban en tu banco y no se repitieron.</p>}
           {ia && <p className="mt-1 text-xs text-[#9a6b00]">Algunas respuestas las decidió la IA (la cartilla no traía clave).</p>}
+          {c.error && <p className="mt-1 text-xs text-[#9a6b00]">{c.error}</p>}
           <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2">
             <span className="flex-1 text-sm font-medium">Usar en simulacros generados</span>
             <input type="checkbox" checked={c.activa} onChange={() => cartillas.alternar(c.id)} className="peer sr-only" />
