@@ -278,6 +278,7 @@ export function planear(b: Banco, materias: MateriaId[], segundos: number, seed:
  * Reparte las preguntas entre las materias elegidas y, si la última unidad no cabe completa,
  * toma solo las preguntas que faltan (el texto común se muestra completo igual).
  * Con `temaIds` solo usa preguntas de esos temas (para «mis puntos de mejora»).
+ * Con `fijos` esas materias se llevan exactamente las preguntas indicadas y el resto se reparte solo.
  */
 export function planearCantidad(
   b: Banco,
@@ -287,15 +288,17 @@ export function planearCantidad(
     seed: number;
     temaIds?: string[] | null;
     vistas?: Set<string>;
+    fijos?: Partial<Record<MateriaId, number>>;
   },
 ): Plan & { porTema: Record<string, number> } {
-  const { n, seed, temaIds, vistas = new Set() } = opts;
+  const { n, seed, temaIds, vistas = new Set(), fijos } = opts;
   const r = rng(seed);
   const orden = MATERIAS.map((m) => m.id).filter((m) => opts.materias.includes(m));
   const temas = temaIds ? new Set(temaIds) : null;
   const elegibles = (u: Unidad) => (temas ? u.preguntas.filter((p) => temas.has(p.tema)) : u.preguntas);
 
   const pools = new Map<MateriaId, Unidad[]>();
+  const disp = new Map<MateriaId, number>();
   for (const m of orden) {
     const us = barajar(
       b.unidades.filter((u) => u.materia === m && elegibles(u).length > 0),
@@ -303,30 +306,83 @@ export function planearCantidad(
     );
     const nuevas = (u: Unidad) => elegibles(u).some((p) => !vistas.has(qkey(u.id, p.n)));
     pools.set(m, [...us.filter(nuevas), ...us.filter((u) => !nuevas(u))]);
+    disp.set(m, us.reduce((a, u) => a + elegibles(u).length, 0));
   }
 
-  const items: PracticaItem[] = [];
-  let falta = Math.max(0, Math.floor(n));
-  // Ronda por materia: así ninguna se lleva todas las preguntas.
-  while (falta > 0) {
-    let avance = false;
-    for (const m of orden) {
-      if (falta <= 0) break;
-      const u = pools.get(m)!.shift();
-      if (!u) continue;
-      avance = true;
-      const qs = elegibles(u).map((p) => p.n);
-      items.push({ u: u.id, qs: qs.slice(0, falta) });
-      falta -= Math.min(qs.length, falta);
+  // 1) Lo que fijaste por materia manda (sin pasarse de lo que hay en el banco).
+  const cuota = new Map<MateriaId, number>();
+  const libres: MateriaId[] = [];
+  let fijado = 0;
+  for (const m of orden) {
+    const f = fijos?.[m];
+    if (f == null || !Number.isFinite(f)) {
+      libres.push(m);
+      continue;
     }
-    if (!avance) break;
+    const v = Math.max(0, Math.min(Math.round(f), disp.get(m) ?? 0));
+    cuota.set(m, v);
+    fijado += v;
   }
 
-  items.sort((a, c) => {
-    const ua = b.porId.get(a.u)!;
-    const uc = b.porId.get(c.u)!;
-    return orden.indexOf(ua.materia) - orden.indexOf(uc.materia);
-  });
+  // 2) El resto se reparte solo, en proporción a lo que hay, con mínimo 1 y máximo lo disponible.
+  let resto = Math.max(0, Math.floor(n) - fijado);
+  const conPreguntas = libres.filter((m) => (disp.get(m) ?? 0) > 0);
+  for (const m of libres) cuota.set(m, 0);
+  if (resto > 0 && conPreguntas.length) {
+    if (resto < conPreguntas.length) {
+      // No alcanza para una en cada una: se las lleva la que más preguntas tenga.
+      [...conPreguntas]
+        .sort((a, c) => (disp.get(c) ?? 0) - (disp.get(a) ?? 0))
+        .slice(0, resto)
+        .forEach((m) => cuota.set(m, 1));
+    } else {
+      const total = conPreguntas.reduce((a, m) => a + (disp.get(m) ?? 0), 0);
+      const base = conPreguntas.map((m) => ({ m, d: disp.get(m) ?? 0, x: (resto * (disp.get(m) ?? 0)) / total }));
+      let asignado = 0;
+      for (const c of base) {
+        const v = Math.min(c.d, Math.max(1, Math.floor(c.x)));
+        cuota.set(c.m, v);
+        asignado += v;
+      }
+      // Ajuste fino: reparte (o quita) de a una respetando el mínimo 1 y el tope de cada materia.
+      let sobra = resto - asignado;
+      const frac = new Map(base.map((c) => [c.m, c.x - Math.floor(c.x)]));
+      for (let guarda = 0; sobra !== 0 && guarda < 500; guarda++) {
+        const cands =
+          sobra > 0
+            ? [...base].sort((a, c) => (frac.get(c.m)! - frac.get(a.m)!) || c.d - a.d)
+            : [...base].sort((a, c) => cuota.get(c.m)! - cuota.get(a.m)!);
+        let movido = false;
+        for (const c of cands) {
+          const v = cuota.get(c.m)!;
+          if (sobra > 0 && v < c.d) {
+            cuota.set(c.m, v + 1);
+            sobra--;
+            movido = true;
+          } else if (sobra < 0 && v > 1) {
+            cuota.set(c.m, v - 1);
+            sobra++;
+            movido = true;
+          }
+          if (sobra === 0) break;
+        }
+        if (!movido) break;
+      }
+    }
+  }
+
+  // 3) Se toman las preguntas de cada materia hasta su cuota, de grupos completos cuando caben.
+  const items: PracticaItem[] = [];
+  for (const m of orden) {
+    let falta = cuota.get(m) ?? 0;
+    for (const u of pools.get(m)!) {
+      if (falta <= 0) break;
+      const qs = elegibles(u).map((p) => p.n).slice(0, falta);
+      if (!qs.length) continue;
+      items.push({ u: u.id, qs });
+      falta -= qs.length;
+    }
+  }
 
   const porMateria: Record<string, number> = {};
   const porTema: Record<string, number> = {};
@@ -340,10 +396,7 @@ export function planearCantidad(
   }
   const preguntas = items.reduce((a, it) => a + it.qs.length, 0);
   const segundos = items.reduce((a, it) => a + costo(b.porId.get(it.u)!, it.qs), 0);
-  const disponibles = [...pools.values()].reduce(
-    (a, us) => a + us.reduce((x, u) => x + elegibles(u).length, 0),
-    0,
-  ) + preguntas;
+  const disponibles = orden.reduce((a, m) => a + (disp.get(m) ?? 0), 0);
   return { items, porMateria, porTema, preguntas, segundos, todo: disponibles <= n };
 }
 

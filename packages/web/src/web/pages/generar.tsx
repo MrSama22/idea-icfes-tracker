@@ -48,6 +48,11 @@ export default function GenerarPage() {
   const [verTodos, setVerTodos] = useState(false);
   const [medida, setMedida] = useState<"tiempo" | "preguntas">("tiempo");
   const [nPreg, setNPreg] = useState(30);
+  // Preguntas fijadas por materia: las que no están aquí se reparten solas.
+  const [fijos, setFijos] = useState<Partial<Record<MateriaId, number>>>({});
+  const sumFijos = useMemo(() => Object.values(fijos).reduce((a, v) => a + (v ?? 0), 0), [fijos]);
+  // Con preguntas fijadas el total no puede bajar de esa suma (y nunca menos de 5).
+  const minPreg = Math.max(5, sumFijos);
 
   const stats = useMemo(() => (banco ? statsTemas(banco, db.practicas ?? []) : null), [banco, db.practicas]);
   const debiles = useMemo(() => (stats ? ordenarPorDificultad([...stats.values()]).filter((s) => s.mal > 0) : []), [stats]);
@@ -79,10 +84,17 @@ export default function GenerarPage() {
   // Tope: lo que hay en el banco y 300 preguntas (10 h, el máximo de un día de examen).
   const maxPreguntas = Math.min(disponibles, 300);
   useEffect(() => {
-    setNPreg((v) => Math.max(5, Math.min(v, Math.max(5, maxPreguntas))));
-  }, [maxPreguntas]);
+    setNPreg((v) => Math.max(minPreg, Math.min(v, Math.max(minPreg, maxPreguntas))));
+  }, [maxPreguntas, minPreg]);
 
-  const duracionMin = medida === "preguntas" ? nPreg * 2 : min;
+  // Preguntas que hay de cada materia (el máximo que se puede fijar en cada una).
+  const dispMateria = useMemo(() => {
+    const m = new Map<MateriaId, number>();
+    if (!banco) return m;
+    for (const u of banco.unidades) m.set(u.materia, (m.get(u.materia) ?? 0) + u.preguntas.length);
+    return m;
+  }, [banco]);
+
   const plan = useMemo(() => {
     if (!banco) return null;
     if (medida === "preguntas") {
@@ -96,7 +108,7 @@ export default function GenerarPage() {
           vistas,
         });
       }
-      return materias.length ? planearCantidad(banco, { materias, n: nPreg, seed, vistas }) : null;
+      return materias.length ? planearCantidad(banco, { materias, n: nPreg, seed, vistas, fijos }) : null;
     }
     if (enfoque === "mejora") {
       if (!temasSel.length) return null;
@@ -104,7 +116,8 @@ export default function GenerarPage() {
       return planearEnfocado(banco, orden, min * 60, seed, vistas, fallos);
     }
     return materias.length ? planear(banco, materias, min * 60, seed, vistas) : null;
-  }, [banco, enfoque, temasSel, debiles, materias, min, medida, nPreg, seed, vistas, fallos]);
+  }, [banco, enfoque, temasSel, debiles, materias, min, medida, nPreg, seed, vistas, fallos, fijos]);
+  const duracionMin = medida === "preguntas" ? (plan?.preguntas ?? nPreg) * 2 : min;
   const matsPlan = useMemo(
     () => (enfoque === "mejora" ? MATERIAS.map((m) => m.id).filter((m) => (plan?.porMateria[m] ?? 0) > 0) : materias),
     [enfoque, plan, materias],
@@ -116,8 +129,23 @@ export default function GenerarPage() {
   const hayPropias = !!banco?.unidades.some((u) => u.fuente);
   const toggleTema = (id: string) => setTemas((xs) => ((xs ?? []).includes(id) ? (xs ?? []).filter((x) => x !== id) : [...(xs ?? []), id]));
 
-  const toggle = (m: MateriaId) =>
+  const setFijo = (m: MateriaId, v: number | null) =>
+    setFijos((fs) => {
+      const next = { ...fs };
+      if (v == null) delete next[m];
+      else next[m] = Math.max(0, Math.min(Math.round(v), dispMateria.get(m) ?? 0));
+      return next;
+    });
+
+  const toggle = (m: MateriaId) => {
+    setFijos((fs) => {
+      if (!(m in fs)) return fs;
+      const next = { ...fs };
+      delete next[m];
+      return next;
+    });
     setMaterias((xs) => (xs.includes(m) ? xs.filter((x) => x !== m) : MATERIAS.map((x) => x.id).filter((x) => x === m || xs.includes(x))));
+  };
 
   const empezar = () => {
     if (!plan || !plan.preguntas) return;
@@ -258,7 +286,10 @@ export default function GenerarPage() {
                 n="02"
                 aside={
                   <button
-                    onClick={() => setMaterias(materias.length === MATERIAS.length ? [] : MATERIAS.map((m) => m.id))}
+                    onClick={() => {
+                      setFijos({});
+                      setMaterias(materias.length === MATERIAS.length ? [] : MATERIAS.map((m) => m.id));
+                    }}
                     className="text-xs font-medium text-accent"
                   >
                     {materias.length === MATERIAS.length ? "Quitar todas" : "Elegir todas"}
@@ -330,13 +361,13 @@ export default function GenerarPage() {
                     <Stepper
                       label="preguntas"
                       value={nPreg}
-                      onChange={(v) => setNPreg(Math.max(5, Math.min(Math.max(5, maxPreguntas), v)))}
+                      onChange={(v) => setNPreg(Math.max(minPreg, Math.min(Math.max(minPreg, maxPreguntas), v)))}
                       step={5}
-                      min={5}
-                      max={Math.max(5, maxPreguntas)}
+                      min={minPreg}
+                      max={Math.max(minPreg, maxPreguntas)}
                     />
                     <p className="text-sm text-muted-foreground">
-                      tiempo: <b className="text-foreground">{fmtDur(nPreg * 120)}</b>
+                      tiempo: <b className="text-foreground">{fmtDur((plan?.preguntas ?? nPreg) * 120)}</b>
                     </p>
                   </div>
                   <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
@@ -344,11 +375,74 @@ export default function GenerarPage() {
                       <>
                         Cada pregunta vale 2 minutos, como en el ICFES. Con lo que elegiste hay hasta{" "}
                         <b className="text-foreground">{maxPreguntas}</b> preguntas (el máximo es 300, 10 horas).
+                        {sumFijos > 0 && (
+                          <>
+                            {" "}Fijaste <b className="text-foreground">{sumFijos}</b>, así que el mínimo son {minPreg}.
+                          </>
+                        )}
                       </>
                     ) : (
                       "Elige al menos una materia o tema para saber cuántas preguntas hay disponibles."
                     )}
                   </p>
+                  {enfoque === "azar" && materias.length > 0 && (
+                    <div className="mt-3 border-t border-border pt-3">
+                      <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Cuántas de cada materia
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Deja «auto» y se reparten solas. Si fijas una (por ejemplo Matemáticas 4), las demás se ajustan
+                        para completar el total.
+                      </p>
+                      <ul className="mt-2 divide-y divide-border/60">
+                        {materias.map((m) => {
+                          const mt = MATERIAS.find((x) => x.id === m)!;
+                          const tope = dispMateria.get(m) ?? 0;
+                          const fijo = fijos[m];
+                          const n = fijo ?? plan?.porMateria[m] ?? 0;
+                          return (
+                            <li key={m} className="flex items-center gap-2 py-1.5 text-sm">
+                              <span className="size-2.5 shrink-0 rounded-full" style={{ background: mt.color }} />
+                              <span className="flex-1 truncate">{mt.nombre}</span>
+                              <button
+                                aria-label={`Menos ${mt.nombre}`}
+                                disabled={n <= 0}
+                                onClick={() => setFijo(m, n - 1)}
+                                className="grid size-7 place-items-center rounded-md border border-border hover:border-foreground disabled:opacity-30"
+                              >
+                                <Minus className="size-3" />
+                              </button>
+                              <span
+                                className="w-8 text-center font-mono text-sm font-semibold tabular-nums"
+                                title={fijo == null ? "Se reparte sola" : `Fija: ${fijo}`}
+                              >
+                                {n}
+                              </span>
+                              <button
+                                aria-label={`Más ${mt.nombre}`}
+                                disabled={n >= tope}
+                                onClick={() => setFijo(m, n + 1)}
+                                className="grid size-7 place-items-center rounded-md border border-border hover:border-foreground disabled:opacity-30"
+                              >
+                                <Plus className="size-3" />
+                              </button>
+                              <button
+                                onClick={() => setFijo(m, null)}
+                                disabled={fijo == null}
+                                aria-label={`Volver a reparto automático en ${mt.nombre}`}
+                                className={cn(
+                                  "w-9 font-mono text-[10px] uppercase tracking-wider",
+                                  fijo == null ? "text-muted-foreground/50" : "text-accent underline",
+                                )}
+                              >
+                                auto
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               ) : (
               <>
