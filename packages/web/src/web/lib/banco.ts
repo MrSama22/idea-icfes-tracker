@@ -175,6 +175,42 @@ export function origen(u: Unidad) {
 export const costo = (u: Unidad, qs: number[] = u.preguntas.map((p) => p.n)) =>
   u.segCtx + u.preguntas.filter((p) => qs.includes(p.n)).reduce((a, p) => a + p.seg, 0);
 
+/**
+ * Huella de una pregunta (enunciado + opciones) para no repetirla en un mismo simulacro aunque en el
+ * banco esté dos veces: en el cuadernillo y en una cartilla, en dos cartillas, o con las fórmulas
+ * escritas distinto (`$x^2$` contra `x^2`, `\frac{5}{100}` contra `5/100`).
+ */
+export function huellaPregunta(q: Pregunta) {
+  return `${q.enunciado ?? ""} ${q.opciones.map((o) => o.t ?? "").join(" ")}`
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\\[a-z]+/g, " ")
+    .replace(/[^a-z0-9ñ]+/g, " ")
+    .trim();
+}
+
+/** Deja una sola copia de cada pregunta en el plan. */
+export function sinRepetidas(b: Banco, items: PracticaItem[]): PracticaItem[] {
+  const vistas = new Set<string>();
+  const out: PracticaItem[] = [];
+  for (const it of items) {
+    const u = b.porId.get(it.u);
+    if (!u) continue;
+    const qs = it.qs.filter((n) => {
+      const q = u.preguntas.find((p) => p.n === n);
+      if (!q) return false;
+      const h = huellaPregunta(q);
+      if (vistas.has(h)) return false;
+      vistas.add(h);
+      return true;
+    });
+    if (!qs.length) continue;
+    out.push(qs.length === it.qs.length ? it : { u: it.u, qs });
+  }
+  return out;
+}
+
 // --- Azar con semilla (para que la vista previa y el simulacro creado coincidan) ---
 function rng(seed: number) {
   let a = seed >>> 0;
@@ -265,9 +301,12 @@ export function planear(b: Banco, materias: MateriaId[], segundos: number, seed:
     }
   }
   // Ordena: por materia (como en el examen real); dentro de cada materia, al azar.
-  const items = orden.flatMap((m) => elegidas.get(m)!);
+  const items = sinRepetidas(b, orden.flatMap((m) => elegidas.get(m)!));
   const porMateria: Record<string, number> = {};
-  for (const m of orden) porMateria[m] = elegidas.get(m)!.reduce((a, it) => a + it.qs.length, 0);
+  for (const it of items) {
+    const u = b.porId.get(it.u)!;
+    porMateria[u.materia] = (porMateria[u.materia] ?? 0) + it.qs.length;
+  }
   const preguntas = items.reduce((a, it) => a + it.qs.length, 0);
   const seg = items.reduce((a, it) => a + costo(b.porId.get(it.u)!, it.qs), 0);
   return { items, porMateria, preguntas, segundos: seg, todo: preguntas === totalTam };
@@ -372,12 +411,22 @@ export function planearCantidad(
   }
 
   // 3) Se toman las preguntas de cada materia hasta su cuota, de grupos completos cuando caben.
+  //    Si una pregunta ya salió en otro lado (misma pregunta en otra unidad), se salta y se sigue
+  //    con la siguiente para no repetirla ni dejar la cuota incompleta.
   const items: PracticaItem[] = [];
+  const vistasHuella = new Set<string>();
   for (const m of orden) {
     let falta = cuota.get(m) ?? 0;
     for (const u of pools.get(m)!) {
       if (falta <= 0) break;
-      const qs = elegibles(u).map((p) => p.n).slice(0, falta);
+      const qs: number[] = [];
+      for (const p of elegibles(u)) {
+        if (qs.length >= falta) break;
+        const h = huellaPregunta(p);
+        if (vistasHuella.has(h)) continue;
+        vistasHuella.add(h);
+        qs.push(p.n);
+      }
       if (!qs.length) continue;
       items.push({ u: u.id, qs });
       falta -= qs.length;
@@ -443,19 +492,24 @@ export function planearEnfocado(
   }
   const orden = MATERIAS.map((m) => m.id);
   elegidas.sort((a, c) => orden.indexOf(a.u.materia) - orden.indexOf(c.u.materia));
-  const items = elegidas.map((x) => ({ u: x.u.id, qs: x.qs }));
+  const items = sinRepetidas(
+    b,
+    elegidas.map((x) => ({ u: x.u.id, qs: x.qs })),
+  );
   const porMateria: Record<string, number> = {};
   const porTema: Record<string, number> = {};
-  for (const x of elegidas) {
-    porMateria[x.u.materia] = (porMateria[x.u.materia] ?? 0) + x.qs.length;
-    for (const n of x.qs) {
-      const t = x.u.preguntas.find((p) => p.n === n)!.tema;
-      porTema[t] = (porTema[t] ?? 0) + 1;
+  for (const it of items) {
+    const u = b.porId.get(it.u)!;
+    porMateria[u.materia] = (porMateria[u.materia] ?? 0) + it.qs.length;
+    for (const n of it.qs) {
+      const q = u.preguntas.find((p) => p.n === n)!;
+      porTema[q.tema] = (porTema[q.tema] ?? 0) + 1;
     }
   }
   const preguntas = items.reduce((a, it) => a + it.qs.length, 0);
   const total = cands.reduce((a, x) => a + x.qs.length, 0);
-  return { items, porMateria, porTema, preguntas, segundos: segundos - rest, todo: preguntas === total };
+  const usados = items.reduce((a, it) => a + costo(b.porId.get(it.u)!, it.qs), 0);
+  return { items, porMateria, porTema, preguntas, segundos: usados, todo: preguntas === total };
 }
 
 /** Lista plana de preguntas de una práctica, en orden. */
