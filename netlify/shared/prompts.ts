@@ -5,7 +5,7 @@ export const SYS_EXTRAER = `Eres un transcriptor experto de cartillas y cuaderni
 Transcribes con total fidelidad (sin resumir, sin corregir, sin inventar) las preguntas de selección múltiple a JSON.
 Reglas:
 - Usa Markdown. Tablas sencillas de texto/números como tablas Markdown.
-- Matemáticas en LaTeX con $...$ (en línea) o $$...$$ (bloque). Dentro de LaTeX escribe \\% para porcentaje. NO uses $ para pesos dentro de fórmulas: escribe "pesos" o \\text{\\$}.
+- Matemáticas en LaTeX con $...$ (en línea) o $$...$$ (bloque). Toda fórmula va entre $...$: nunca dejes un comando suelto como \\frac{5}{100} sin delimitadores. Dentro de LaTeX escribe \\% para porcentaje. NO uses $ para pesos dentro de fórmulas: escribe "pesos" o \\text{\\$}.
 - Gráficas, diagramas, mapas, dibujos, esquemas, caricaturas, avisos ilustrados y tablas complejas NO se transcriben: se marcan como figura con su caja,
   y en el texto se pone el marcador {{FIG:k}} donde va la figura (k = índice dentro de esa lista de figuras, desde 0).
 - box_2d = [ymin, xmin, ymax, xmax] normalizado 0-1000 sobre la imagen indicada por "pagina" (0 = primera imagen enviada, 1 = segunda). Incluye títulos, ejes y rótulos; deja un pequeño margen.

@@ -5,6 +5,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { img, type Figura } from "../lib/banco";
+import { envolverLatex } from "../lib/latex";
 import { cn } from "../lib/utils";
 
 const MARK = /\{\{FIG:(\d+)\}\}/g;
@@ -41,7 +42,7 @@ export const Md = memo(function Md({ children, className }: { children: string; 
   return (
     <div className={cn("md", className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-        {arreglarPesos(children)}
+        {arreglarPesos(envolverLatex(children))}
       </ReactMarkdown>
     </div>
   );
