@@ -96,8 +96,9 @@ export default function CartillasPage() {
         Mis cartillas<span className="text-accent">.</span>
       </h1>
       <p className="mt-1 max-w-2xl text-muted-foreground">
-        Sube un PDF o fotos de una cartilla o simulacro de tu colegio o preuniversitario. La leemos, sacamos las preguntas
-        con sus textos y gráficas, y les ponemos explicación. Después salen en tus simulacros generados.
+        Sube PDF o fotos de cartillas de tu colegio o preuniversitario. La leemos, sacamos las preguntas con sus
+        textos y gráficas, y les ponemos explicación. Después salen en tus simulacros generados. Puedes elegir varios
+        archivos a la vez: cada PDF queda como una cartilla aparte.
       </p>
 
       {iaLista === false && (
@@ -182,6 +183,7 @@ export default function CartillasPage() {
             <FileUp className="size-8 text-accent" />
             <p className="font-display text-lg font-bold">Toca para elegir archivos</p>
             <p className="text-sm text-muted-foreground">o arrástralos aquí · PDF o fotos · hasta 120 páginas</p>
+            <p className="text-xs text-muted-foreground">Varios PDF a la vez = varias cartillas. Las fotos sueltas van juntas en una.</p>
             <input
               ref={input}
               type="file"
@@ -293,7 +295,7 @@ export default function CartillasPage() {
               )}
               <ul className="space-y-3" data-testid="lista">
                 {lista.map((c) => (
-                  <Item key={c.id} c={c} onPracticar={() => practicar(c)} />
+                  <Item key={c.id} c={c} admin={cuenta?.rol === "admin"} onPracticar={() => practicar(c)} />
                 ))}
               </ul>
             </>
@@ -512,7 +514,7 @@ function Barra({ hechas, total, label }: { hechas: number; total: number; label:
   );
 }
 
-function Item({ c, onPracticar }: { c: Cartilla; onPracticar: () => void }) {
+function Item({ c, admin, onPracticar }: { c: Cartilla; admin: boolean; onPracticar: () => void }) {
   const pr = progreso(c);
   const [borrar, setBorrar] = useState(false);
   const mats = [...new Set(c.unidades.map((u) => u.materia))].map((m) => MATERIAS.find((x) => x.id === m)!);
@@ -562,6 +564,22 @@ function Item({ c, onPracticar }: { c: Cartilla; onPracticar: () => void }) {
               <span className={cn("absolute top-0.5 size-5 rounded-full bg-white shadow transition-all", c.activa ? "left-[22px]" : "left-0.5")} />
             </span>
           </label>
+          {admin && (
+            <label className="mt-2 flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2">
+              <span className="min-w-0 flex-1 text-sm font-medium">
+                <span className="flex items-center gap-1.5">
+                  <Globe className="size-3.5 text-[#2F5DA8]" /> Compartir con todas las cuentas
+                </span>
+                <span className="block text-xs font-normal text-muted-foreground">
+                  {c.global ? "Todos la ven y practican. Solo tú puedes quitarla." : "Queda como cartilla global para todos los usuarios."}
+                </span>
+              </span>
+              <input type="checkbox" checked={!!c.global} onChange={() => cartillas.publicar(c.id, !c.global)} className="peer sr-only" />
+              <span className={cn("relative h-6 w-11 shrink-0 rounded-full transition", c.global ? "bg-[#2F5DA8]" : "bg-border")}>
+                <span className={cn("absolute top-0.5 size-5 rounded-full bg-white shadow transition-all", c.global ? "left-[22px]" : "left-0.5")} />
+              </span>
+            </label>
+          )}
         </>
       )}
 

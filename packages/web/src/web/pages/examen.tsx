@@ -6,7 +6,8 @@ import { Cargando } from "./generar";
 import { AyudaSubrayado, BarraSubrayado, SubrayadoProvider } from "../components/subrayar";
 import { useDB, useNow } from "../hooks/use-store";
 import { aplanar, useBanco } from "../lib/banco";
-import { MATERIAS, fmtClock } from "../lib/domain";
+import { MATERIAS, RAZONES_BLANCA, fmtClock, type TipoId } from "../lib/domain";
+import { useAjustes } from "../lib/ajustes";
 import { pausar, reanudar, terminar, transcurrido } from "../lib/practica";
 import { store } from "../lib/store";
 import { cn } from "../lib/utils";
@@ -16,6 +17,7 @@ export default function ExamenPage() {
   const [, nav] = useLocation();
   const { banco, error } = useBanco();
   const db = useDB();
+  const { preguntarBlancas } = useAjustes();
   const p = (db.practicas ?? []).find((x) => x.id === id) ?? null;
   const flat = useMemo(() => (banco && p ? aplanar(banco, p) : []), [banco, p?.items]); // eslint-disable-line
   const [hoja, setHoja] = useState(false);
@@ -64,13 +66,18 @@ export default function ExamenPage() {
   const revelado = practica && !!elegida;
 
   const elegir = (l: string | undefined) => {
-    if (!p || !it || p.finalizado || revelado) return;
+    if (!p || !it || p.finalizado || revelado || !p.iniciadoEn) return;
     store.actualizarPractica(p.id, (x) => {
       const r = { ...x.respuestas };
       if (l) r[it.key] = l;
       else delete r[it.key];
       return { respuestas: r };
     });
+  };
+  /** Motivo por el que se dejó una pregunta en blanco (alimenta el registro de errores). */
+  const marcarRazon = (key: string, tipo: TipoId) => {
+    if (!p) return;
+    store.actualizarPractica(p.id, (x) => ({ razones: { ...(x.razones ?? {}), [key]: tipo } }));
   };
   const marcar = () => {
     if (!p || !it) return;
@@ -109,6 +116,7 @@ export default function ExamenPage() {
 
   const respondidas = flat.filter((x) => p.respuestas[x.key]).length;
   const blancas = flat.length - respondidas;
+  const blancasItems = flat.filter((x) => !p.respuestas[x.key]);
   const tieneCtx = !!(it.u.contexto || it.u.contextoFiguras.length);
   const enPocoTiempo = limite && restante < 5 * 60000;
   const ultima = i === flat.length - 1;
@@ -151,9 +159,20 @@ export default function ExamenPage() {
       </header>
 
       {!p.iniciadoEn && (
-        <button onClick={() => reanudar(p.id)} className="block w-full bg-[#D99A06] py-2 text-center text-sm font-semibold text-foreground">
-          En pausa — toca para seguir
-        </button>
+        <div className="border-b border-[#D99A06] bg-[#D99A06]/15">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm">
+            <Pause className="size-4 shrink-0 text-[#9a6b00]" />
+            <span className="min-w-0 flex-1">
+              <b>En pausa.</b> El reloj está detenido y no puedes responder hasta que reanudes.
+            </span>
+            <button
+              onClick={() => reanudar(p.id)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-foreground px-3 text-xs font-semibold text-background"
+            >
+              <Play className="size-3.5" /> Reanudar
+            </button>
+          </div>
+        </div>
       )}
 
       <div ref={topRef} className="scroll-mt-16" />
@@ -177,7 +196,7 @@ export default function ExamenPage() {
               )}
             </div>
           )}
-          <div ref={qRef} className={cn("scroll-mt-20", !tieneCtx && "mx-auto w-full max-w-2xl")}>
+          <div ref={qRef} className={cn("relative scroll-mt-20", !tieneCtx && "mx-auto w-full max-w-2xl")}>
             <PreguntaView u={it.u} q={it.q} numero={i + 1} elegida={elegida} onElegir={elegir} revelar={revelado} />
             {revelado && (
               <>
@@ -189,6 +208,23 @@ export default function ExamenPage() {
                   {ultima ? "Ver resultados" : "Siguiente pregunta"} <ArrowRight className="size-4" />
                 </button>
               </>
+            )}
+            {!p.iniciadoEn && (
+              <div className="absolute inset-0 z-20 grid place-items-center rounded-lg bg-background/80 px-4 text-center backdrop-blur-[2px]">
+                <div>
+                  <Pause className="mx-auto size-7 text-accent" />
+                  <p className="mt-2 font-display text-xl font-bold">En pausa</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    El reloj está detenido: no puedes marcar respuestas.
+                  </p>
+                  <button
+                    onClick={() => reanudar(p.id)}
+                    className="mt-4 inline-flex h-11 items-center gap-2 rounded-md bg-accent px-5 font-semibold text-accent-foreground"
+                  >
+                    <Play className="size-4" /> Reanudar
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -284,27 +320,97 @@ export default function ExamenPage() {
       )}
 
       {confirmar && (
-        <Modal onClose={() => setConfirmar(false)} titulo="¿Terminar el simulacro?">
-          <p>
-            {blancas
-              ? `Te quedan ${blancas} pregunta${blancas === 1 ? "" : "s"} sin responder. En el ICFES no se resta por equivocarse: es mejor marcar algo que dejarla en blanco.`
-              : "Respondiste todas las preguntas."}
-          </p>
-          <div className="mt-5 flex gap-2">
-            <button onClick={() => setConfirmar(false)} className="h-12 flex-1 rounded-md border border-border font-medium">
-              Seguir respondiendo
-            </button>
-            <button
-              data-testid="confirmar-terminar"
-              onClick={() => {
-                terminar(banco, p.id);
-                nav(`/p/${p.id}/resultado`);
-              }}
-              className="h-12 flex-1 rounded-md bg-accent font-semibold text-white"
-            >
-              Ver resultados
-            </button>
-          </div>
+        <Modal
+          onClose={() => setConfirmar(false)}
+          titulo={preguntarBlancas && blancasItems.length ? "¿Por qué las dejaste en blanco?" : "¿Terminar el simulacro?"}
+        >
+          {preguntarBlancas && blancasItems.length ? (
+            <>
+              <p className="text-sm">
+                Te quedan <b>{blancasItems.length}</b> sin responder. El motivo cambia el tipo de error que se guarda y
+                los consejos que ves después. Si dejas alguna sin motivo, contará como falta de tiempo.
+              </p>
+              <ul className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1 scroll-fino">
+                {blancasItems.map((x) => {
+                  const m = MATERIAS.find((mm) => mm.id === x.u.materia)!;
+                  const sel = p.razones?.[x.key];
+                  return (
+                    <li key={x.key} className="rounded-lg border border-border bg-background p-2.5">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold">
+                        <span className="font-mono text-xs text-muted-foreground">#{x.i + 1}</span>
+                        <span className="size-2 shrink-0 rounded-full" style={{ background: m.color }} />
+                        <span className="truncate">{banco.temaPorId.get(x.q.tema)?.nombre ?? m.nombre}</span>
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {RAZONES_BLANCA.map((r) => (
+                          <button
+                            key={r.id}
+                            onClick={() => marcarRazon(x.key, r.id)}
+                            aria-pressed={sel === r.id}
+                            className={cn(
+                              "rounded-full border px-2.5 py-1 text-xs font-medium transition",
+                              sel === r.id
+                                ? "border-foreground bg-foreground text-background"
+                                : "border-border hover:border-foreground",
+                            )}
+                          >
+                            {r.label}
+                          </button>
+                        ))}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Puedes desactivar esta pregunta en Ajustes.
+              </p>
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={() => setConfirmar(false)}
+                  className="h-12 flex-1 rounded-md border border-border font-medium"
+                >
+                  Seguir respondiendo
+                </button>
+                <button
+                  data-testid="confirmar-terminar"
+                  onClick={() => {
+                    terminar(banco, p.id);
+                    nav(`/p/${p.id}/resultado`);
+                  }}
+                  className="h-12 flex-1 rounded-md bg-accent font-semibold text-white"
+                >
+                  Ver resultados
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p>
+                {blancas
+                  ? `Te quedan ${blancas} pregunta${blancas === 1 ? "" : "s"} sin responder. En el ICFES no se resta por equivocarse: es mejor marcar algo que dejarla en blanco.`
+                  : "Respondiste todas las preguntas."}
+              </p>
+              <div className="mt-5 flex gap-2">
+                <button
+                  onClick={() => setConfirmar(false)}
+                  className="h-12 flex-1 rounded-md border border-border font-medium"
+                >
+                  Seguir respondiendo
+                </button>
+                <button
+                  data-testid="confirmar-terminar"
+                  onClick={() => {
+                    terminar(banco, p.id);
+                    nav(`/p/${p.id}/resultado`);
+                  }}
+                  className="h-12 flex-1 rounded-md bg-accent font-semibold text-white"
+                >
+                  Ver resultados
+                </button>
+              </div>
+            </>
+          )}
         </Modal>
       )}
     </div>

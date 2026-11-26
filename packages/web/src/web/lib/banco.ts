@@ -274,6 +274,80 @@ export function planear(b: Banco, materias: MateriaId[], segundos: number, seed:
 }
 
 /**
+ * Simulacro con un número exacto de preguntas (cada una vale 2 minutos, como en el ICFES).
+ * Reparte las preguntas entre las materias elegidas y, si la última unidad no cabe completa,
+ * toma solo las preguntas que faltan (el texto común se muestra completo igual).
+ * Con `temaIds` solo usa preguntas de esos temas (para «mis puntos de mejora»).
+ */
+export function planearCantidad(
+  b: Banco,
+  opts: {
+    materias: MateriaId[];
+    n: number;
+    seed: number;
+    temaIds?: string[] | null;
+    vistas?: Set<string>;
+  },
+): Plan & { porTema: Record<string, number> } {
+  const { n, seed, temaIds, vistas = new Set() } = opts;
+  const r = rng(seed);
+  const orden = MATERIAS.map((m) => m.id).filter((m) => opts.materias.includes(m));
+  const temas = temaIds ? new Set(temaIds) : null;
+  const elegibles = (u: Unidad) => (temas ? u.preguntas.filter((p) => temas.has(p.tema)) : u.preguntas);
+
+  const pools = new Map<MateriaId, Unidad[]>();
+  for (const m of orden) {
+    const us = barajar(
+      b.unidades.filter((u) => u.materia === m && elegibles(u).length > 0),
+      r,
+    );
+    const nuevas = (u: Unidad) => elegibles(u).some((p) => !vistas.has(qkey(u.id, p.n)));
+    pools.set(m, [...us.filter(nuevas), ...us.filter((u) => !nuevas(u))]);
+  }
+
+  const items: PracticaItem[] = [];
+  let falta = Math.max(0, Math.floor(n));
+  // Ronda por materia: así ninguna se lleva todas las preguntas.
+  while (falta > 0) {
+    let avance = false;
+    for (const m of orden) {
+      if (falta <= 0) break;
+      const u = pools.get(m)!.shift();
+      if (!u) continue;
+      avance = true;
+      const qs = elegibles(u).map((p) => p.n);
+      items.push({ u: u.id, qs: qs.slice(0, falta) });
+      falta -= Math.min(qs.length, falta);
+    }
+    if (!avance) break;
+  }
+
+  items.sort((a, c) => {
+    const ua = b.porId.get(a.u)!;
+    const uc = b.porId.get(c.u)!;
+    return orden.indexOf(ua.materia) - orden.indexOf(uc.materia);
+  });
+
+  const porMateria: Record<string, number> = {};
+  const porTema: Record<string, number> = {};
+  for (const it of items) {
+    const u = b.porId.get(it.u)!;
+    porMateria[u.materia] = (porMateria[u.materia] ?? 0) + it.qs.length;
+    for (const num of it.qs) {
+      const q = u.preguntas.find((p) => p.n === num);
+      if (q) porTema[q.tema] = (porTema[q.tema] ?? 0) + 1;
+    }
+  }
+  const preguntas = items.reduce((a, it) => a + it.qs.length, 0);
+  const segundos = items.reduce((a, it) => a + costo(b.porId.get(it.u)!, it.qs), 0);
+  const disponibles = [...pools.values()].reduce(
+    (a, us) => a + us.reduce((x, u) => x + elegibles(u).length, 0),
+    0,
+  ) + preguntas;
+  return { items, porMateria, porTema, preguntas, segundos, todo: disponibles <= n };
+}
+
+/**
  * Simulacro enfocado en temas concretos (los puntos débiles del estudiante).
  * `temaIds` va del más débil al menos débil: los primeros pesan más. Las preguntas que ya falló suman puntos
  * (vale la pena volver a intentarlas) y un poco de azar evita que siempre salga lo mismo.

@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { Settings } from "lucide-react";
 import { cn } from "../lib/utils";
 import { auth, useAuth } from "../lib/auth";
 
@@ -55,6 +56,14 @@ export function Shell({ children, right }: { children: React.ReactNode; right?: 
           </Link>
           <div className="flex items-center gap-2">
             {right}
+            <Link
+              to="/ajustes"
+              aria-label="Ajustes"
+              title="Ajustes"
+              className="grid size-9 place-items-center rounded-md border border-border bg-card text-muted-foreground transition hover:border-foreground hover:text-foreground"
+            >
+              <Settings className="size-4" />
+            </Link>
             <Cuenta />
           </div>
         </div>

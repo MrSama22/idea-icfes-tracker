@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
-import { ChevronLeft, Clock, Minus, Plus, Shuffle, Play, BookOpen, Timer as TimerIcon, Dices, Target, FileUp, X } from "lucide-react";
+import { ChevronLeft, Clock, Minus, Plus, Shuffle, Play, BookOpen, Timer as TimerIcon, Dices, Target, FileUp, ListChecks, X } from "lucide-react";
 import { Shell, SectionTitle } from "../components/shell";
 import { useDB } from "../hooks/use-store";
-import { fmtDur, ordenarPorDificultad, planear, planearEnfocado, statsTemas, useBanco } from "../lib/banco";
+import { fmtDur, ordenarPorDificultad, planear, planearCantidad, planearEnfocado, statsTemas, useBanco } from "../lib/banco";
 import { MATERIAS, type MateriaId } from "../lib/domain";
 import { store } from "../lib/store";
 import { cn } from "../lib/utils";
@@ -46,6 +46,8 @@ export default function GenerarPage() {
   const [enfoque, setEnfoque] = useState<"azar" | "mejora">(() => (new URLSearchParams(search).get("enfoque") === "mejora" ? "mejora" : "azar"));
   const [temas, setTemas] = useState<string[] | null>(null);
   const [verTodos, setVerTodos] = useState(false);
+  const [medida, setMedida] = useState<"tiempo" | "preguntas">("tiempo");
+  const [nPreg, setNPreg] = useState(30);
 
   const stats = useMemo(() => (banco ? statsTemas(banco, db.practicas ?? []) : null), [banco, db.practicas]);
   const debiles = useMemo(() => (stats ? ordenarPorDificultad([...stats.values()]).filter((s) => s.mal > 0) : []), [stats]);
@@ -62,15 +64,47 @@ export default function GenerarPage() {
   }, [db.practicas]);
 
   const temasSel = temas ?? [];
+
+  // Preguntas que hay con la selección actual (para el modo por número de preguntas).
+  const disponibles = useMemo(() => {
+    if (!banco) return 0;
+    const us = banco.unidades.filter((u) =>
+      enfoque === "mejora" ? u.preguntas.some((p) => temasSel.includes(p.tema)) : materias.includes(u.materia),
+    );
+    return us.reduce(
+      (a, u) => a + (enfoque === "mejora" ? u.preguntas.filter((p) => temasSel.includes(p.tema)).length : u.preguntas.length),
+      0,
+    );
+  }, [banco, enfoque, materias, temasSel]);
+  // Tope: lo que hay en el banco y 300 preguntas (10 h, el máximo de un día de examen).
+  const maxPreguntas = Math.min(disponibles, 300);
+  useEffect(() => {
+    setNPreg((v) => Math.max(5, Math.min(v, Math.max(5, maxPreguntas))));
+  }, [maxPreguntas]);
+
+  const duracionMin = medida === "preguntas" ? nPreg * 2 : min;
   const plan = useMemo(() => {
     if (!banco) return null;
+    if (medida === "preguntas") {
+      if (enfoque === "mejora") {
+        if (!temasSel.length) return null;
+        return planearCantidad(banco, {
+          materias: MATERIAS.map((m) => m.id),
+          temaIds: temasSel,
+          n: nPreg,
+          seed,
+          vistas,
+        });
+      }
+      return materias.length ? planearCantidad(banco, { materias, n: nPreg, seed, vistas }) : null;
+    }
     if (enfoque === "mejora") {
       if (!temasSel.length) return null;
       const orden = [...temasSel].sort((a, c) => debiles.findIndex((s) => s.tema.id === a) - debiles.findIndex((s) => s.tema.id === c));
       return planearEnfocado(banco, orden, min * 60, seed, vistas, fallos);
     }
     return materias.length ? planear(banco, materias, min * 60, seed, vistas) : null;
-  }, [banco, enfoque, temasSel, debiles, materias, min, seed, vistas, fallos]);
+  }, [banco, enfoque, temasSel, debiles, materias, min, medida, nPreg, seed, vistas, fallos]);
   const matsPlan = useMemo(
     () => (enfoque === "mejora" ? MATERIAS.map((m) => m.id).filter((m) => (plan?.porMateria[m] ?? 0) > 0) : materias),
     [enfoque, plan, materias],
@@ -96,9 +130,9 @@ export default function GenerarPage() {
     const p = store.crearPractica({
       tipo: "simulacro",
       modo,
-      nombre: `${nombres} · ${fmtDur(min * 60)}`,
+      nombre: `${nombres} · ${fmtDur(duracionMin * 60)}`,
       materias: matsPlan,
-      duracionMin: min,
+      duracionMin,
       items: plan.items,
     });
     nav(`/p/${p.id}`);
@@ -120,8 +154,8 @@ export default function GenerarPage() {
         Generar simulacro<span className="text-accent">.</span>
       </h1>
       <p className="mt-1 max-w-2xl text-muted-foreground">
-        Con preguntas reales de los cuadernillos oficiales del ICFES{hayPropias ? " y de tus cartillas" : ""}. Tú eliges el
-        tiempo; nosotros calculamos cuántas preguntas caben y las escogemos.
+        Con preguntas reales de los cuadernillos oficiales del ICFES{hayPropias ? " y de tus cartillas" : ""}. Elige el
+        tiempo y nosotros calculamos cuántas preguntas caben, o elige cuántas quieres a ritmo de 2 minutos por pregunta.
       </p>
 
       {!banco ? (
@@ -267,6 +301,57 @@ export default function GenerarPage() {
 
             <section>
               <SectionTitle n="03">¿Cuánto tiempo tienes?</SectionTitle>
+              <div className="mb-3 grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
+                {(
+                  [
+                    ["tiempo", "Por tiempo"],
+                    ["preguntas", "Por número de preguntas"],
+                  ] as const
+                ).map(([k, l]) => (
+                  <button
+                    key={k}
+                    onClick={() => {
+                      setMedida(k);
+                      if (k === "preguntas" && plan) setNPreg(Math.max(5, Math.min(maxPreguntas, plan.preguntas || 30)));
+                    }}
+                    className={cn(
+                      "h-9 rounded-[5px] text-sm font-semibold transition",
+                      medida === k ? "bg-card shadow-[0_1px_0_1px_var(--border)]" : "text-muted-foreground",
+                    )}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+              {medida === "preguntas" ? (
+                <div className="rounded-lg border border-border bg-card p-3">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <ListChecks className="size-5 shrink-0 text-muted-foreground" />
+                    <Stepper
+                      label="preguntas"
+                      value={nPreg}
+                      onChange={(v) => setNPreg(Math.max(5, Math.min(Math.max(5, maxPreguntas), v)))}
+                      step={5}
+                      min={5}
+                      max={Math.max(5, maxPreguntas)}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      tiempo: <b className="text-foreground">{fmtDur(nPreg * 120)}</b>
+                    </p>
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                    {maxPreguntas > 0 ? (
+                      <>
+                        Cada pregunta vale 2 minutos, como en el ICFES. Con lo que elegiste hay hasta{" "}
+                        <b className="text-foreground">{maxPreguntas}</b> preguntas (el máximo es 300, 10 horas).
+                      </>
+                    ) : (
+                      "Elige al menos una materia o tema para saber cuántas preguntas hay disponibles."
+                    )}
+                  </p>
+                </div>
+              ) : (
+              <>
               <div className="flex flex-wrap gap-2">
                 {PRESETS.map((p) => (
                   <button
@@ -287,6 +372,8 @@ export default function GenerarPage() {
                 <Stepper label="horas" value={h} onChange={(v) => setHM(v, mm)} step={1} />
                 <Stepper label="minutos" value={mm} onChange={(v) => (v >= 60 ? setHM(h + 1, 0) : v < 0 ? setHM(h - 1, 55) : setHM(h, v))} step={5} />
               </div>
+              </>
+              )}
             </section>
 
             <section>
@@ -326,7 +413,7 @@ export default function GenerarPage() {
                     <span className="text-lg font-semibold">preguntas</span>
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    en {fmtDur(min * 60)}
+                    en {fmtDur(duracionMin * 60)}
                     {plan.todo && (enfoque === "mejora" ? " · son todas las que hay de esos temas" : " · son todas las del banco para esas materias")}
                   </p>
                   <ul className="mt-4 space-y-1.5">
@@ -348,8 +435,10 @@ export default function GenerarPage() {
                     </p>
                   )}
                   <p className="mt-4 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
-                    Calculado a ritmo de examen real (≈2 min por pregunta, más el tiempo de leer los textos). Las
-                    preguntas que comparten un texto salen juntas y siempre con su texto.
+                    {medida === "preguntas"
+                      ? `${nPreg} preguntas × 2 min = ${fmtDur(nPreg * 120)}, el ritmo del ICFES. `
+                      : "Calculado a ritmo de examen real (≈2 min por pregunta, más el tiempo de leer los textos). "}
+                    Las preguntas que comparten un texto salen juntas y siempre con su texto.
                   </p>
                   <div className="mt-4 flex gap-2">
                     <button
@@ -383,13 +472,28 @@ export default function GenerarPage() {
   );
 }
 
-function Stepper({ label, value, onChange, step }: { label: string; value: number; onChange: (v: number) => void; step: number }) {
+function Stepper({
+  label,
+  value,
+  onChange,
+  step,
+  min = 0,
+  max = Infinity,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  step: number;
+  min?: number;
+  max?: number;
+}) {
   return (
     <div className="flex items-center gap-2">
       <button
         aria-label={`Menos ${label}`}
+        disabled={value <= min}
         onClick={() => onChange(value - step)}
-        className="grid size-10 place-items-center rounded-md border border-border bg-background hover:border-foreground"
+        className="grid size-10 place-items-center rounded-md border border-border bg-background hover:border-foreground disabled:opacity-30"
       >
         <Minus className="size-4" />
       </button>
@@ -399,8 +503,9 @@ function Stepper({ label, value, onChange, step }: { label: string; value: numbe
       </div>
       <button
         aria-label={`Más ${label}`}
+        disabled={value >= max}
         onClick={() => onChange(value + step)}
-        className="grid size-10 place-items-center rounded-md border border-border bg-background hover:border-foreground"
+        className="grid size-10 place-items-center rounded-md border border-border bg-background hover:border-foreground disabled:opacity-30"
       >
         <Plus className="size-4" />
       </button>

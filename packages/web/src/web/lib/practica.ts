@@ -1,5 +1,5 @@
 import { aplanar, type Banco } from "./banco";
-import { MATERIAS, type MateriaId, type Practica, type TipoId } from "./domain";
+import { MATERIAS, RAZONES_BLANCA, type MateriaId, type Practica, type TipoId } from "./domain";
 import { store } from "./store";
 
 export const transcurrido = (p: Practica, now = Date.now()) => p.acumuladoMs + (p.iniciadoEn ? now - p.iniciadoEn : 0);
@@ -49,14 +49,18 @@ export function terminar(b: Banco, id: string) {
     .filter((it) => p.respuestas[it.key] !== it.q.clave)
     .map((it) => {
       const r = p.respuestas[it.key];
-      // Sin responder → tiempo; fallar una fácil suele ser caer en el distractor; lo demás, vacío conceptual.
-      const tipo: TipoId = !r ? "TIEMPO" : it.q.dificultad <= 1 ? "TRAMPA" : "VACIO";
+      // Sin responder manda el motivo que eligió el estudiante (si lo dijo); si no, tiempo.
+      // Fallar una fácil suele ser caer en el distractor; lo demás, vacío conceptual.
+      const motivo = !r ? RAZONES_BLANCA.find((x) => x.id === p.razones?.[it.key]) : undefined;
+      const tipo: TipoId = !r ? (motivo?.id ?? "TIEMPO") : it.q.dificultad <= 1 ? "TRAMPA" : "VACIO";
       const tema = b.temaPorId.get(it.q.tema)?.nombre ?? "";
       return {
         materia: it.u.materia,
         numeroPregunta: it.q.n,
         tipo,
-        nota: [tema, it.q.subtema].filter(Boolean).join(" · ") + (r ? ` (marcaste ${r}, era ${it.q.clave})` : " (sin responder)"),
+        nota:
+          [tema, it.q.subtema].filter(Boolean).join(" · ") +
+          (r ? ` (marcaste ${r}, era ${it.q.clave})` : ` (sin responder${motivo ? ` · ${motivo.label.toLowerCase()}` : ""})`),
       };
     });
   store.registrarFallos(id, {

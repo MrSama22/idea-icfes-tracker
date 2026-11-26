@@ -6,7 +6,7 @@ import { Contexto, Explicacion, PreguntaView } from "../components/pregunta";
 import { Cargando } from "./generar";
 import { useDB } from "../hooks/use-store";
 import { ilus, itemsDesdeClaves, useBanco } from "../lib/banco";
-import { MATERIAS, fmtClock, materiaById, pct } from "../lib/domain";
+import { MATERIAS, RAZONES_BLANCA, fmtClock, materiaById, pct } from "../lib/domain";
 import { calificar } from "../lib/practica";
 import { store } from "../lib/store";
 import { cn } from "../lib/utils";
@@ -29,6 +29,11 @@ export default function ResultadoPage() {
   const nota = pct(cal.bien, cal.total);
   const fallos = cal.flat.filter((x) => p.respuestas[x.key] !== x.q.clave);
   const lista = filtro === "fallos" ? fallos : filtro === "marcadas" ? cal.flat.filter((x) => p.marcadas.includes(x.key)) : cal.flat;
+  const razonDe = (k: string) => RAZONES_BLANCA.find((r) => r.id === p.razones?.[k]);
+  const blancasPorRazon = RAZONES_BLANCA.map((r) => ({
+    r,
+    n: cal.flat.filter((x) => !p.respuestas[x.key] && p.razones?.[x.key] === r.id).length,
+  })).filter((x) => x.n > 0);
   const temasDebiles = Object.entries(cal.porTema)
     .filter(([, v]) => v.bien < v.total)
     .sort((a, b) => a[1].bien / a[1].total - b[1].bien / b[1].total || b[1].total - a[1].total)
@@ -73,6 +78,15 @@ export default function ResultadoPage() {
           <p className="mt-1 font-mono text-xs text-muted-foreground">
             {cal.mal} incorrectas · {cal.blancas} sin responder · tiempo {fmtClock(p.acumuladoMs)}
           </p>
+          {blancasPorRazon.length > 0 && (
+            <p className="mt-2 flex flex-wrap gap-1.5 text-xs">
+              {blancasPorRazon.map(({ r, n }) => (
+                <span key={r.id} className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
+                  {n} {r.corto.toLowerCase()}
+                </span>
+              ))}
+            </p>
+          )}
         </div>
       </div>
 
@@ -198,7 +212,12 @@ export default function ResultadoPage() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{x.q.subtema || banco.temaPorId.get(x.q.tema)?.nombre}</span>
                     <span className="font-mono text-[11px] text-muted-foreground">
-                      <span style={{ color: m.color }}>{m.corto}</span> · {ok ? `bien (${r})` : r ? `marcaste ${r} · era ${x.q.clave}` : `sin responder · era ${x.q.clave}`}
+                      <span style={{ color: m.color }}>{m.corto}</span> ·{" "}
+                      {ok
+                        ? `bien (${r})`
+                        : r
+                          ? `marcaste ${r} · era ${x.q.clave}`
+                          : `sin responder${razonDe(x.key) ? ` (${razonDe(x.key)!.corto.toLowerCase()})` : ""} · era ${x.q.clave}`}
                     </span>
                   </span>
                   <ChevronDown className={cn("size-4 shrink-0 transition", open && "rotate-180")} />

@@ -62,6 +62,13 @@ export const TIPOS = [
 export type MateriaId = (typeof MATERIAS)[number]["id"];
 export type TipoId = (typeof TIPOS)[number]["id"];
 
+/** Motivos que se ofrecen al terminar un simulacro con preguntas en blanco. */
+export const RAZONES_BLANCA: { id: TipoId; label: string; corto: string }[] = [
+  { id: "TIEMPO", label: "No me dio tiempo", corto: "Sin tiempo" },
+  { id: "VACIO", label: "No sabía el tema", corto: "Vacío" },
+  { id: "TRAMPA", label: "No entendí la pregunta", corto: "Confusión" },
+];
+
 export interface Simulacro {
   id: string;
   nombre: string;
@@ -140,6 +147,8 @@ export interface Practica {
   finalizadoEn?: number;
   /** zona → [inicio, fin, color] */
   subrayados?: Record<string, [number, number, number][]>;
+  /** pregunta ("unidad:n") → por qué se dejó en blanco */
+  razones?: Record<string, TipoId>;
   registroId?: string; // simulacro del registro de errores creado al terminar
   creadoEn: number;
   updatedAt?: number;

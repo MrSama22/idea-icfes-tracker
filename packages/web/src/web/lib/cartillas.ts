@@ -92,11 +92,36 @@ export const cartillas = {
   /** Unidades listas de las cartillas activas + las globales (se suman al banco). */
   unidades(): Unidad[] {
     const propias = lista.filter((c) => c.fase === "listo" && c.activa).flatMap((c) => c.unidades);
-    return [...propias, ...globales.flatMap((c) => c.unidades)];
+    const todas = [...propias, ...globales.flatMap((c) => c.unidades)];
+    // Una cartilla publicada por el admin sale en sus dos listas: no duplicamos sus preguntas.
+    const vistos = new Set<string>();
+    return todas.filter((u) => {
+      if (vistos.has(u.id)) return false;
+      vistos.add(u.id);
+      return true;
+    });
   },
   async alternar(id: string) {
     const c = lista.find((x) => x.id === id);
     if (c) await guardar({ ...c, activa: !c.activa });
+  },
+  /** Solo administrador: publica una cartilla ya subida para todas las cuentas (o la vuelve privada). */
+  async publicar(id: string, global: boolean) {
+    const c = lista.find((x) => x.id === id);
+    if (!c) return;
+    const n: Cartilla = { ...c, global: global || undefined, sincronizada: false };
+    await guardar(n);
+    const ok = await subir(n);
+    if (!ok) {
+      await guardar(c);
+      avisarError("No se pudo cambiar la visibilidad de la cartilla. Revisa tu conexión e inténtalo otra vez.");
+      return;
+    }
+    // Se mueve entre «mis cartillas» y «globales»: borra la copia del otro lado.
+    if (auth.get().cuenta) {
+      await fetch(`/api/${global ? "cartillas" : "global"}/${id}`, { method: "DELETE" }).catch(() => {});
+    }
+    await cargarGlobales();
   },
   async renombrar(id: string, nombre: string) {
     const c = lista.find((x) => x.id === id);
@@ -106,11 +131,13 @@ export const cartillas = {
     void subir(n);
   },
   async eliminar(id: string) {
+    const c = lista.find((x) => x.id === id);
     lista = lista.filter((x) => x.id !== id);
     avisar();
     await idb.del("cartillas", id);
     await idb.delPrefijo("paginas", `${id}:`);
-    if (auth.get().cuenta) await fetch(`/api/cartillas/${id}`, { method: "DELETE" }).catch(() => {});
+    if (auth.get().cuenta)
+      await fetch(`/api/${c?.global ? "global" : "cartillas"}/${id}`, { method: "DELETE" }).catch(() => {});
   },
   async reintentar(id: string) {
     const c = lista.find((x) => x.id === id);
@@ -208,13 +235,66 @@ async function aJpeg(fuente: CanvasImageSource, w: number, h: number, maxW = 140
   return cv.toDataURL("image/jpeg", calidad);
 }
 
+const esPdf = (f: File) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+
+/**
+ * Sube los archivos elegidos. Cada PDF queda como una cartilla propia (puedes subir varios de una vez);
+ * las fotos sueltas se agrupan en una sola cartilla.
+ */
 export async function subirArchivos(
   files: File[],
   nombre: string,
   materia: MateriaId | null,
   onPaso?: (txt: string) => void,
   global = false,
-) {
+): Promise<Cartilla[]> {
+  const grupos: { archivos: File[]; base: string }[] = [];
+  let fotos: File[] = [];
+  const cerrarFotos = () => {
+    if (fotos.length) {
+      grupos.push({ archivos: fotos, base: "" });
+      fotos = [];
+    }
+  };
+  for (const f of files) {
+    if (esPdf(f)) {
+      cerrarFotos();
+      grupos.push({ archivos: [f], base: f.name.replace(/\.[^.]+$/, "") });
+    } else fotos.push(f);
+  }
+  cerrarFotos();
+
+  const hechas: Cartilla[] = [];
+  const errores: string[] = [];
+  for (const g of grupos) {
+    // Con un nombre escrito y varios archivos, se le añade el nombre del PDF para distinguirlas.
+    const titulo = nombre.trim()
+      ? grupos.length > 1
+        ? `${nombre.trim()} · ${g.base || "fotos"}`
+        : nombre.trim()
+      : g.base;
+    try {
+      hechas.push(await subirUno(g.archivos, titulo, materia, onPaso, global));
+    } catch (e) {
+      errores.push(String((e as Error).message ?? e));
+    }
+  }
+  if (!hechas.length && errores.length) throw new Error(errores[0]);
+  if (errores.length) {
+    avisarError(
+      `No se ${errores.length === 1 ? "pudo subir 1 archivo" : `pudieron subir ${errores.length} archivos`}: ${errores[0]}`,
+    );
+  }
+  return hechas;
+}
+
+async function subirUno(
+  files: File[],
+  nombre: string,
+  materia: MateriaId | null,
+  onPaso?: (txt: string) => void,
+  global = false,
+): Promise<Cartilla> {
   const id = uid();
   const c: Cartilla = {
     id,
@@ -674,16 +754,17 @@ export async function cerrarCuenta() {
   avisar();
 }
 
-async function subir(c: Cartilla) {
-  if (!auth.get().cuenta || c.fase !== "listo") return;
+async function subir(c: Cartilla): Promise<boolean> {
+  if (!auth.get().cuenta || c.fase !== "listo") return false;
   const cuerpo = JSON.stringify({ id: c.id, nombre: c.nombre, materia: c.materia, creado: c.creado, unidades: c.unidades, repetidas: c.repetidas, global: !!c.global });
-  if (cuerpo.length > 5_700_000) return; // muy grande para la nube: se queda solo en este dispositivo
+  if (cuerpo.length > 5_700_000) return false; // muy grande para la nube: se queda solo en este dispositivo
   const ruta = c.global ? `/api/global/${c.id}` : `/api/cartillas/${c.id}`;
   const r = await fetch(ruta, { method: "PUT", headers: { "content-type": "application/json" }, body: cuerpo }).catch(() => null);
-  if (!r?.ok) return;
+  if (!r?.ok) return false;
   const x = lista.find((y) => y.id === c.id);
   if (x) await guardar({ ...x, sincronizada: true });
   if (c.global) await cargarGlobales();
+  return true;
 }
 
 let sincronizando = false;
