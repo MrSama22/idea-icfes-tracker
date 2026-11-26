@@ -53,6 +53,19 @@ export function normalizarClaves(texto: unknown): string[] {
   return salida;
 }
 
+/** Une claves nuevas a las que ya había: sin repetir y sin pasar del máximo. */
+export function unirClaves(previas: string[], nuevas: string[]): { claves: string[]; agregadas: number } {
+  const claves = [...previas];
+  let agregadas = 0;
+  for (const k of nuevas) {
+    if (claves.includes(k)) continue;
+    if (claves.length >= MAX_CLAVES) break;
+    claves.push(k);
+    agregadas++;
+  }
+  return { claves, agregadas };
+}
+
 /** Lo que se recibió del formulario: las buenas y las que no se reconocieron (para avisar). */
 export function revisarClaves(texto: unknown): { claves: string[]; invalidas: string[] } {
   const trozos = String(texto ?? "")

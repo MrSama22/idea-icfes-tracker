@@ -92,8 +92,13 @@ export const auth = {
     ),
   claveTemporal: (email: string) => pedir<{ email: string; clave: string }>("/api/admin/clave", { email }),
   estadoClaveIA: () => pedir<{ propia: boolean; claves?: number; servidor: boolean }>("/api/auth/clave-ia"),
-  guardarClaveIA: (clave: string) =>
-    pedir<{ ok: boolean; propia: boolean; claves?: number; servidor: boolean }>("/api/auth/clave-ia", { clave }, "PUT"),
+  /** `agregar` suma las claves a las que ya hay, sin borrar las anteriores. */
+  guardarClaveIA: (clave: string, agregar = false) =>
+    pedir<{ ok: boolean; propia: boolean; claves?: number; agregadas?: number; servidor: boolean }>(
+      "/api/auth/clave-ia",
+      { clave, agregar },
+      "PUT",
+    ),
   borrarClaveIA: () =>
     pedir<{ ok: boolean; propia: boolean; servidor: boolean }>("/api/auth/clave-ia", undefined, "DELETE"),
 };

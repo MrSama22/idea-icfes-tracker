@@ -366,12 +366,20 @@ function ClaveIA({
   const usaServidor = cuenta.rol === "admin" && Boolean(ia?.servidor) && !ia?.propia;
 
   const guardar = async () => {
+    // Si ya hay claves, las nuevas se suman: no se borra nada.
+    const agregar = Boolean(ia?.propia);
     setOcupado(true);
     setAviso(null);
     try {
-      await auth.guardarClaveIA(valor.trim());
+      const r = await auth.guardarClaveIA(valor.trim(), agregar);
       setValor("");
-      setAviso("Clave guardada. Ya puedes subir cartillas.");
+      setAviso(
+        !agregar
+          ? "Claves guardadas. Ya puedes subir cartillas."
+          : r.agregadas
+            ? `Añadidas ${r.agregadas} ${r.agregadas === 1 ? "clave" : "claves"}. Ahora tienes ${r.claves} en total.`
+            : "Esas claves ya estaban guardadas (o llegaste al máximo de 10).",
+      );
       recargar();
     } catch (e) {
       setAviso(String((e as Error).message ?? e));
@@ -381,6 +389,7 @@ function ClaveIA({
   };
 
   const borrar = async () => {
+    if (!confirm("¿Borrar todas tus claves de IA de esta cuenta? Podrás volver a pegar otras.")) return;
     setOcupado(true);
     setAviso(null);
     try {
@@ -446,40 +455,44 @@ function ClaveIA({
           </span>
         </div>
       )}
-      {ia?.propia ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-[#2E7D4F]/10 px-2.5 py-1.5 text-sm font-semibold text-[#2E7D4F]">
-            <CheckCircle2 className="size-4" />{" "}
-            {ia?.claves ? `${ia.claves} ${ia.claves === 1 ? "clave guardada" : "claves guardadas"}` : "Clave guardada"}
-          </span>
-          <button
-            onClick={borrar}
-            disabled={ocupado}
-            className="h-9 rounded-md border border-border px-3 text-sm font-semibold hover:border-foreground disabled:opacity-40"
-          >
-            Borrar y poner otras
-          </button>
-        </div>
-      ) : (
-        <div className="mt-3 flex flex-col gap-2">
-          <textarea
-            value={valor}
-            onChange={(e) => setValor(e.target.value)}
-            rows={3}
-            placeholder={"Una clave por línea (o separadas por comas):\nAQ…\nsk-or-…\ngsk_…\nmstrl_…\nnvapi-…"}
-            autoComplete="off"
-            spellCheck={false}
-            className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-foreground"
-          />
-          <button
-            onClick={guardar}
-            disabled={ocupado || valor.trim().length < 20}
-            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 self-start rounded-md bg-foreground px-4 text-sm font-semibold text-background disabled:opacity-40"
-          >
-            {ocupado ? <Loader2 className="size-4 animate-spin" /> : null} Guardar claves
-          </button>
-        </div>
-      )}
+      <div className="mt-3 flex flex-col gap-2">
+        {ia?.propia && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-[#2E7D4F]/10 px-2.5 py-1.5 text-sm font-semibold text-[#2E7D4F]">
+              <CheckCircle2 className="size-4" />{" "}
+              {ia?.claves ? `${ia.claves} ${ia.claves === 1 ? "clave guardada" : "claves guardadas"}` : "Clave guardada"}
+            </span>
+            <button
+              onClick={borrar}
+              disabled={ocupado}
+              className="h-9 rounded-md border border-border px-3 text-sm font-semibold hover:border-foreground disabled:opacity-40"
+            >
+              Borrar todas
+            </button>
+          </div>
+        )}
+        <textarea
+          value={valor}
+          onChange={(e) => setValor(e.target.value)}
+          rows={3}
+          placeholder={"Una clave por línea (o separadas por comas):\nAQ…\nsk-or-…\ngsk_…\nmstrl_…\nnvapi-…"}
+          autoComplete="off"
+          spellCheck={false}
+          className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-foreground"
+        />
+        <button
+          onClick={guardar}
+          disabled={ocupado || valor.trim().length < 20}
+          className="inline-flex h-11 shrink-0 items-center justify-center gap-2 self-start rounded-md bg-foreground px-4 text-sm font-semibold text-background disabled:opacity-40"
+        >
+          {ocupado ? <Loader2 className="size-4 animate-spin" /> : null} {ia?.propia ? "Añadir claves" : "Guardar claves"}
+        </button>
+        <p className="text-xs text-muted-foreground">
+          {ia?.propia
+            ? "Las claves que ya tienes se conservan: aquí solo se suman las nuevas (hasta 10 en total)."
+            : "Puedes pegar varias de una vez y añadir más cuando quieras; no hay que volver a escribir las anteriores."}
+        </p>
+      </div>
       {aviso && <p className="mt-2 text-sm text-accent">{aviso}</p>}
     </div>
   );

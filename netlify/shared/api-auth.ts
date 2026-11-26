@@ -17,7 +17,7 @@ import {
   sesionDe,
   verificar,
 } from "./auth.ts";
-import { claveServidor, leerClaves, revisarClaves } from "./claves.ts";
+import { claveServidor, leerClaves, revisarClaves, unirClaves } from "./claves.ts";
 import { correoConfigurado, enviarCodigo } from "./correo.ts";
 import { error, json } from "./respuesta.ts";
 
@@ -112,18 +112,23 @@ export async function manejarAuth(req: Request, accion: string, a: Almacen): Pro
       if (!u) return error("Entra a tu cuenta primero.", 401);
       const d = await cuerpo(req);
       // Se pueden pegar varias claves (una por línea): la app va cambiando de una a otra al agotarse.
-      const { claves, invalidas } = revisarClaves(texto(d.clave));
-      if (!claves.length || invalidas.length)
+      const { claves: nuevas, invalidas } = revisarClaves(texto(d.clave));
+      if (!nuevas.length || invalidas.length)
         return error(
           invalidas.length
             ? `No reconozco ${invalidas.length === 1 ? "esta clave" : "estas claves"}: ${String(invalidas[0] ?? "").slice(0, 24)}… Usa una de Gemini (AIza… o AQ…), OpenRouter (sk-or-…), Groq (gsk_…), Mistral (mstrl_… o \`mistral:…\`), NVIDIA (nvapi-…), OpenAI (sk-…).`
             : "Pega al menos una clave de IA.",
         );
+      // `agregar` conserva las claves que la cuenta ya tenía; sin él se reemplazan todas.
+      const { claves, agregadas } = d.agregar === true
+        ? unirClaves(await leerClaves(a, u.id), nuevas)
+        : { claves: nuevas, agregadas: nuevas.length };
       await a.set(`k/${u.id}`, { claves, creado: Date.now() });
       return json({
         ok: true,
         propia: true,
         claves: claves.length,
+        agregadas,
         servidor: u.rol === "admin" && claveServidor(),
       });
     }
