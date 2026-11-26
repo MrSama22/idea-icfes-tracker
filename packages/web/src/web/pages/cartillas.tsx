@@ -232,7 +232,10 @@ export default function CartillasPage() {
                 </Chip>
               ))}
             </div>
-            <p className="mt-1.5 text-xs text-muted-foreground">Si la cartilla trae varias materias, deja "Detectar sola".</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Si la cartilla trae varias materias, deja "Detectar sola": usamos el nombre del archivo y el contenido
+              de cada pregunta para saber de qué materia es.
+            </p>
           </div>
 
           {cuenta.rol === "admin" && (
@@ -562,6 +565,12 @@ function Item({ c, admin, onPracticar }: { c: Cartilla; admin: boolean; onPracti
             )}
           </p>
           {!!c.repetidas && <p className="mt-1 text-xs text-muted-foreground">{c.repetidas} ya estaban en tu banco y no se repitieron.</p>}
+          {!!c.descartadas && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {c.descartadas} pregunta{c.descartadas === 1 ? " no se pudo usar" : "s no se pudieron usar"} porque la
+              cartilla no traía su respuesta correcta.
+            </p>
+          )}
           {ia && <p className="mt-1 text-xs text-[#9a6b00]">Algunas respuestas las decidió la IA (la cartilla no traía clave).</p>}
           {c.error && <p className="mt-1 text-xs text-[#9a6b00]">{c.error}</p>}
           <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2">

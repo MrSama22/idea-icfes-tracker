@@ -36,6 +36,8 @@ export interface Cartilla {
   paginas: Record<number, Paso>;
   crudas?: Cruda[];
   repetidas?: number;
+  /** preguntas que no se pudieron usar por no traer respuesta correcta */
+  descartadas?: number;
   exp: Record<string, Paso>;
   unidades: Unidad[];
   sincronizada?: boolean;
@@ -237,6 +239,20 @@ async function aJpeg(fuente: CanvasImageSource, w: number, h: number, maxW = 140
 
 const esPdf = (f: File) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
 
+/** Materia por el nombre del archivo (los cuadernillos del ICFES la traen en el nombre). */
+function materiaDelNombre(nombre: string): MateriaId | null {
+  const s = nombre
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (/sociales|ciudadan|historia|geograf/.test(s)) return "SOC";
+  if (/ciencias|naturales|biolog|fisic|quimic/.test(s)) return "CIE";
+  if (/lectura|critica|reading/.test(s)) return "LEC";
+  if (/matematic|math/.test(s)) return "MAT";
+  if (/ingles|english/.test(s)) return "ING";
+  return null;
+}
+
 /**
  * Sube los archivos elegidos. Cada PDF queda como una cartilla propia (puedes subir varios de una vez);
  * las fotos sueltas se agrupan en una sola cartilla.
@@ -296,10 +312,12 @@ async function subirUno(
   global = false,
 ): Promise<Cartilla> {
   const id = uid();
+  // Si no eligió materia, se deduce del nombre del archivo (ej. «...-cuadernillo-ingles-sab...»).
+  const materiaAuto = materia ?? materiaDelNombre(files.map((f) => f.name).join(" "));
   const c: Cartilla = {
     id,
     nombre: nombre.trim() || files[0]?.name.replace(/\.[^.]+$/, "") || "Mi cartilla",
-    materia,
+    materia: materiaAuto,
     creado: Date.now(),
     activa: true,
     total: 0,
@@ -551,7 +569,7 @@ async function ensamblar(id: string) {
 
   // Se deduplica por pregunta Y materia: una cartilla mixta puede numerar 1..25 en cada materia
   // y antes la segunda materia se perdía entera por «número repetido».
-  const vistas = new Set<string>();
+  const vistas = new Map<string, number>(); // "materia:número" → página donde salió
   // Huellas de las preguntas de ESTA cartilla: si se repiten entre páginas se descartan sin
   // contar como «ya estaban en tu banco» (eso cancelaba subidas de cartillas nuevas).
   const deEsta = new Set<string>();
@@ -573,8 +591,12 @@ async function ensamblar(id: string) {
           // La IA marca la materia de cada pregunta; si la cartilla mezcla materias, cada una va a la suya.
           const materiaQ = (c.materia ?? (esMateria(q.materia) ? q.materia : materiaUnidad)) as MateriaId;
           const marca = `${materiaQ}:${num}`;
-          if (vistas.has(marca)) continue;
-          vistas.add(marca);
+          // Solo se ignora si la misma pregunta venía de la página anterior (solapamiento de las
+          // dos imágenes del mismo envío). Si el número se repite varias páginas después, es otra
+          // pregunta: antes se perdían secciones enteras que reinician la numeración.
+          const antes = vistas.get(marca);
+          if (antes !== undefined && n - antes <= 1) continue;
+          vistas.set(marca, n);
           const huella = norm(String(q.enunciado ?? "") + q.opciones.map((o: any) => String(o.texto ?? "")).join(""));
           if (huella.length > 40) {
             // «Repetida» = ya está en el banco o en otra cartilla terminada (no en esta misma).
@@ -613,6 +635,15 @@ async function ensamblar(id: string) {
         /* seguimos con las demás unidades: lo que sí se leyó se conserva */
       }
     }
+  }
+
+  // Si la IA repartió una cartilla de una sola materia entre varias, manda la mayoría clara.
+  if (!c.materia && crudas.length) {
+    const cuenta = new Map<MateriaId, number>();
+    for (const u of crudas) cuenta.set(u.materia, (cuenta.get(u.materia) ?? 0) + u.preguntas.length);
+    const totalQ = [...cuenta.values()].reduce((a, b) => a + b, 0);
+    const top = [...cuenta].sort((a, b) => b[1] - a[1])[0];
+    if (top && totalQ >= 10 && top[1] / totalQ >= 0.8) for (const u of crudas) u.materia = top[0];
   }
 
   const cc = actual(id);
@@ -687,13 +718,17 @@ async function explicar(id: string) {
 async function terminar(id: string) {
   const c = actual(id);
   const unidades: Unidad[] = [];
+  let descartadas = 0;
   for (const u of c.crudas ?? []) {
     const r = c.exp[u.id]?.r;
     const preguntas: Pregunta[] = [];
     for (const q of u.preguntas) {
       const e = r?.preguntas?.find((x: any) => Number(x.n) === q.n);
       const clave = (q.clave ?? String(e?.clave ?? "").toUpperCase().slice(0, 1)) || "";
-      if (!q.opciones.some((o) => o.l === clave)) continue; // sin respuesta confiable: no sirve para practicar
+      if (!q.opciones.some((o) => o.l === clave)) {
+        descartadas++; // sin respuesta confiable: no sirve para practicar
+        continue;
+      }
       preguntas.push({
         n: q.n,
         enunciado: q.enunciado,
@@ -739,6 +774,7 @@ async function terminar(id: string) {
   const listo: Cartilla = {
     ...c,
     unidades,
+    descartadas: descartadas || undefined,
     fase: unidades.length ? "listo" : "error",
     error: unidades.length ? notas || undefined : notas || "No pudimos preparar las preguntas de esta cartilla.",
     // Si no se pudo preparar nada, conservamos lo leído para reintentar solo la explicación
@@ -799,7 +835,7 @@ export async function cerrarCuenta() {
 
 async function subir(c: Cartilla): Promise<boolean> {
   if (!auth.get().cuenta || c.fase !== "listo") return false;
-  const cuerpo = JSON.stringify({ id: c.id, nombre: c.nombre, materia: c.materia, creado: c.creado, unidades: c.unidades, repetidas: c.repetidas, global: !!c.global });
+  const cuerpo = JSON.stringify({ id: c.id, nombre: c.nombre, materia: c.materia, creado: c.creado, unidades: c.unidades, repetidas: c.repetidas, descartadas: c.descartadas, global: !!c.global });
   if (cuerpo.length > 5_700_000) {
     // Muy grande para la nube: se conserva en este dispositivo y se avisa en la lista.
     const x = lista.find((y) => y.id === c.id);
