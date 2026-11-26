@@ -84,6 +84,28 @@ if (typeof indexedDB !== "undefined") {
     });
 } else listoRes!();
 
+/**
+ * Una página que continúa el texto (o la tabla) de la página anterior llega sin contexto: el material
+ * quedó en la unidad de la página previa. Si la numeración sigue y la unidad no trae texto propio, se
+ * hereda el de la anterior, que es el mismo bloque («RESPONDA LAS PREGUNTAS 1 A 13…»).
+ */
+export function heredarContexto(us: Unidad[]): Unidad[] {
+  const salida: Unidad[] = [];
+  const previa = new Map<MateriaId, Unidad>();
+  for (const u of us) {
+    const p = previa.get(u.materia);
+    const ultimaN = p?.preguntas[p.preguntas.length - 1]?.n;
+    const sigue = ultimaN !== undefined && u.preguntas[0]?.n === ultimaN + 1;
+    const vacia = !u.contexto && !u.contextoFiguras.length;
+    const hereda = vacia && sigue && !!(p!.contexto || p!.contextoFiguras.length);
+    const fin = hereda ? { ...u, contexto: p!.contexto, contextoFiguras: p!.contextoFiguras } : u;
+    salida.push(fin);
+    // Encadenada: si la página siguiente también continúa, hereda igual.
+    previa.set(u.materia, fin);
+  }
+  return salida;
+}
+
 export const cartillas = {
   subscribe(f: () => void) {
     subs.add(f);
@@ -93,8 +115,8 @@ export const cartillas = {
   listo: () => listoP,
   /** Unidades listas de las cartillas activas + las globales (se suman al banco). */
   unidades(): Unidad[] {
-    const propias = lista.filter((c) => c.fase === "listo" && c.activa).flatMap((c) => c.unidades);
-    const todas = [...propias, ...globales.flatMap((c) => c.unidades)];
+    const propias = lista.filter((c) => c.fase === "listo" && c.activa).flatMap((c) => heredarContexto(c.unidades));
+    const todas = [...propias, ...globales.flatMap((c) => heredarContexto(c.unidades))];
     // Una cartilla publicada por el admin sale en sus dos listas: no duplicamos sus preguntas.
     const vistos = new Set<string>();
     return todas.filter((u) => {
