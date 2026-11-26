@@ -40,9 +40,11 @@ function finDeMath(t: string, i: number) {
       return j + 1;
     }
     // separada por espacio: solo sigue si viene un operador suelto, más LaTeX o un número tras un operador
-    const palabra = /^\s+(\S+)/.exec(resto)?.[1] ?? "";
+    const palabra = (/^\s+(\S+)/.exec(resto)?.[1] ?? "").replace(/[).,;:!?»"']+$/, "");
     if (/^[=+\-*/<>×÷·^_]$/.test(palabra) || /^\\[a-zA-Z]+/.test(palabra)) continue;
     if (/^[=+\-*/<>×÷·]$/.test(c) && /^([0-9]+([.,][0-9]+)?|[A-Za-z])$/.test(palabra)) continue;
+    // notación científica tras un operador ("= 10^{-2}")
+    if (/^[=+\-*/<>×÷·]$/.test(c) && /^[0-9][0-9.,]*[\^_\{]/.test(palabra)) continue;
     return j + 1;
   }
   return t.length;
@@ -85,9 +87,70 @@ function inicioDeMath(t: string, i: number) {
   return j;
 }
 
+/** ¿El texto (sin los comandos LaTeX ni sus argumentos) es una fórmula y no una frase? */
+function pareceFormula(t: string) {
+  let limpio = "";
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (c === "\\" && /[a-zA-Z]/.test(t[i + 1] ?? "")) {
+      const m = /^\\[a-zA-Z]+/.exec(t.slice(i))![0];
+      i += m.length - 1;
+      while (t[i + 1] === "{") {
+        let nivel = 0;
+        let j = i + 1;
+        for (; j < t.length; j++) {
+          if (t[j] === "{") nivel++;
+          else if (t[j] === "}" && --nivel === 0) break;
+        }
+        i = j;
+      }
+      continue;
+    }
+    if (c === "{" || c === "}") continue;
+    limpio += c;
+  }
+  // una palabra de tres letras o más fuera de \text{…} delata prosa, no una fórmula
+  return !/[A-Za-zÁÉÍÓÚÜáéíóúüÑñ]{3,}/.test(limpio);
+}
+
+/** Índice siguiente al «)» que cierra el «(» en `abre`, o -1 si no cierra en la misma línea. */
+function cierreParentesis(t: string, abre: number) {
+  let nivel = 0;
+  for (let j = abre; j < t.length; j++) {
+    const c = t[j];
+    if (c === "\\" && /[a-zA-Z]/.test(t[j + 1] ?? "")) {
+      j += /^\\[a-zA-Z]+/.exec(t.slice(j))![0].length - 1;
+      continue;
+    }
+    if (c === "\n") return -1;
+    if (c === "(") nivel++;
+    else if (c === ")" && --nivel === 0) return j + 1;
+  }
+  return -1;
+}
+
+/** «( … )» de la misma línea que contiene a `i`, si su contenido es una fórmula y no una frase. */
+function grupoParentesis(t: string, i: number) {
+  let abre = -1;
+  for (let j = t.lastIndexOf("\n", i) + 1; j < i; j++) {
+    const c = t[j];
+    if (c === "\\") {
+      j++;
+      continue;
+    }
+    if (c === "(") abre = j;
+    else if (c === ")") abre = -1;
+  }
+  if (abre === -1) return null;
+  const cierra = cierreParentesis(t, abre);
+  if (cierra === -1 || cierra <= i) return null;
+  if (!pareceFormula(t.slice(abre + 1, cierra - 1))) return null;
+  return { abre, cierra };
+}
+
 /** Cierre de una fórmula ya delimitada, respetando \$ y $$…$$. */
-function cierreDeMath(t: string, desde: number, delim: "$" | "$$") {
-  for (let j = desde; j < t.length; j++) {
+function cierreDeMath(t: string, desde: number, delim: "$" | "$$", hasta = t.length) {
+  for (let j = desde; j < Math.min(hasta, t.length); j++) {
     if (t[j] === "\\") {
       j++;
       continue;
@@ -102,7 +165,8 @@ function cierreDeMath(t: string, desde: number, delim: "$" | "$$") {
  * ni el código en línea. Sirve para preguntas viejas o mal transcritas.
  */
 export function envolverLatex(texto: string) {
-  if (!texto || !/\\[a-zA-Z]/.test(texto)) return texto;
+  // también interesan las potencias sueltas ("10^{-2}"), que no llevan ningún comando
+  if (!texto || !(/\\[a-zA-Z]/.test(texto) || /[0-9]\s*\^\s*(?:-?[0-9]|\{)/.test(texto))) return texto;
   let salida = "";
   let i = 0;
   while (i < texto.length) {
@@ -121,19 +185,40 @@ export function envolverLatex(texto: string) {
     }
     if (c === "$") {
       const delim = texto[i + 1] === "$" ? "$$" : "$";
-      const fin = cierreDeMath(texto, i + delim.length, delim);
+      // el $ de un precio ("$175.500") no abre una fórmula: solo cuenta si cierra en la misma línea
+      const salto = texto.indexOf("\n", i);
+      const fin = cierreDeMath(texto, i + delim.length, delim, salto === -1 ? texto.length : salto);
+      if (fin === -1 && delim === "$") {
+        salida += "\\$";
+        i++;
+        continue;
+      }
       const hasta = fin === -1 ? texto.length : fin + delim.length;
       salida += texto.slice(i, hasta);
       i = hasta;
       continue;
     }
     if (c === "\\" && /[a-zA-Z]/.test(texto[i + 1] ?? "")) {
-      const inicio = inicioDeMath(texto, i);
-      const fin = finDeMath(texto, i);
+      let inicio = inicioDeMath(texto, i);
+      let fin = finDeMath(texto, i);
+      // Los pasos del modelo suelen venir entre paréntesis: «(100, \text{m} \div 100 = 1, \text{m})».
+      // Se envuelve el grupo completo para no cortar la fórmula por dentro.
+      const grupo = grupoParentesis(texto, i);
+      if (grupo && grupo.cierra > fin) {
+        inicio = grupo.abre;
+        fin = grupo.cierra;
+      }
       const previo = texto.slice(inicio, i);
       if (previo && salida.endsWith(previo)) salida = salida.slice(0, salida.length - previo.length);
       salida += `$${texto.slice(inicio, fin)}$`;
       i = fin;
+      continue;
+    }
+    // potencias sueltas sin comando LaTeX ("10^{-2}", "x^3" ya sin \\times)
+    const potencia = /^[0-9]+(?:[.,][0-9]+)?\s*\^\s*(?:\{[^{}]*\}|-?[0-9]+)/.exec(texto.slice(i));
+    if (potencia && /[0-9]/.test(c) && (i === 0 || !/[0-9.,]/.test(texto[i - 1]))) {
+      salida += `$${potencia[0]}$`;
+      i += potencia[0].length;
       continue;
     }
     salida += c;
