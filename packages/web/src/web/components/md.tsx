@@ -10,6 +10,35 @@ import { cn } from "../lib/utils";
 
 const MARK = /\{\{FIG:(\d+)\}\}/g;
 
+/** `<br>` (viene en tablas de procedimientos): remark lo deja como HTML crudo y se veía como texto. */
+const SALTO = /<br\s*\/?>/i;
+
+function remarkSalto() {
+  return (tree: any) => {
+    const andar = (n: any) => {
+      if (!Array.isArray(n.children)) return;
+      const hijos: any[] = [];
+      for (const h of n.children) {
+        if (h.type === "html" && SALTO.test(h.value) && !h.value.replace(SALTO, "").trim()) {
+          hijos.push({ type: "break" });
+          continue;
+        }
+        if (h.type === "text" && SALTO.test(h.value)) {
+          h.value.split(SALTO).forEach((t: string, i: number) => {
+            if (i) hijos.push({ type: "break" });
+            if (t) hijos.push({ type: "text", value: t });
+          });
+          continue;
+        }
+        andar(h);
+        hijos.push(h);
+      }
+      n.children = hijos;
+    };
+    andar(tree);
+  };
+}
+
 /** Dentro de una fórmula, "\$" (pesos) cerraría la fórmula antes de tiempo: se cambia por un carácter equivalente. */
 export function arreglarPesos(t: string) {
   if (!t.includes("\\$")) return t;
@@ -41,7 +70,7 @@ export const Md = memo(function Md({ children, className }: { children: string; 
   if (!children) return null;
   return (
     <div className={cn("md", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath, remarkSalto]} rehypePlugins={[rehypeKatex]}>
         {arreglarPesos(envolverLatex(children))}
       </ReactMarkdown>
     </div>
